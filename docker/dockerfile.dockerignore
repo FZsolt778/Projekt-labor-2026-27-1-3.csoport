@@ -1,0 +1,6 @@
+*
+!server/
+!alembic/
+!alembic.ini
+!requirements-server.txt
+**/__pycache__
