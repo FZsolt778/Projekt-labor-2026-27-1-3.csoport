@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Boolean, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.core.database import Base
+from server.src.database import Base
 
 if TYPE_CHECKING:
     from server.models.contact import Contact

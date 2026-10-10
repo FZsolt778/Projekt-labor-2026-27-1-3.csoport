@@ -1,11 +1,11 @@
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy import String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.core.database import Base
+from server.src.database import Base
 
 if TYPE_CHECKING:
-    from app.models.user import User
-    from app.models.parcel import Parcel
+    from server.models.user import User
+    from server.models.parcel import Parcel
 
 class Contact(Base):
     __tablename__ = "contacts"

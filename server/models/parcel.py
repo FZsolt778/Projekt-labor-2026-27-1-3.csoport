@@ -1,17 +1,18 @@
 from datetime import date, time, datetime
 from enum import Enum
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import (
     String, ForeignKey, Date, Time, DateTime, 
     CheckConstraint, Index, func, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.core.database import Base
+from server.src.database import Base
 
 if TYPE_CHECKING:
-    from app.models.contact import Contact
-    from app.models.warehouse import Warehouse
-    from app.models.user import User
+    from server.models.contact import Contact
+    from server.models.warehouse import Warehouse
+    from server.models.user import User
+    from server.models.parcel_event import ParcelEvent
 
 class ParcelSize(str, Enum):
     S = "S"
@@ -76,6 +77,11 @@ class Parcel(Base):
     )
     delivery_courier: Mapped[Optional["User"]] = relationship(
         back_populates="delivery_parcels", foreign_keys=[delivery_courier_id]
+    )
+    # Állapotnapló, rögzítési sorrendben
+    events: Mapped[List["ParcelEvent"]] = relationship(
+        back_populates="parcel", cascade="all, delete-orphan", passive_deletes=True,
+        order_by="ParcelEvent.id"
     )
 
     __table_args__ = (
