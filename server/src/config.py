@@ -24,5 +24,9 @@ class ENV_CONFIG(BaseSettings):
     JWT_ALGORITHM: str
     JWT_EXPIRE_MINUTES: int
 
+    MAX_FAILED_DELIVERIES: int = 3
+    ADMIN_EMAIL: str | None = None
+    ADMIN_PASSWORD: SecretStr | None = None
+
 
 settings = ENV_CONFIG()
