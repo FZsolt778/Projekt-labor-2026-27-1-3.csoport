@@ -46,7 +46,7 @@ def _get_user_from_token(token: str, db: Session) -> User:
     try:
         payload = decode_access_token(token)
         user_id = int(payload["sub"])
-    except (jwt.InvalidAlgorithmError, ValueError):
+    except (jwt.InvalidTokenError, KeyError, ValueError):
         raise credentials_error
     user = db.get(User, user_id)
     if user is None or not user.is_active:
