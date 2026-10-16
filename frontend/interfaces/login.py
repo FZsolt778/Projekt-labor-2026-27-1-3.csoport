@@ -27,7 +27,7 @@ class LoginInterface(QFrame):
 
         # Fő layout
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(80, 60, 80, 60)
+        self.layout.setContentsMargins(200, 200, 200, 60)
         self.layout.setSpacing(15)
 
         # Cím

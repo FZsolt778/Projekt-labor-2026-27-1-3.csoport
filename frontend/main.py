@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout
 from PySide6.QtGui import QIcon
 import lucide
 from interfaces.login import LoginInterface
+from interfaces.track import TrackInterface
 
 class Widget(QFrame):
 
@@ -30,7 +31,7 @@ class Window(FluentWindow):
 
         # Create sub-interfaces, when actually using, replace Widget with your own sub-interface
         self.homeInterface = Widget('Főoldal', self)
-        self.trackInterface = Widget('Nyomkövetés', self)
+        self.trackInterface = TrackInterface()
         self.packageInterface = Widget('Csomagfeladás', self)
         self.settingInterface = Widget('Beállítások', self)
         self.loginInterface = LoginInterface()
