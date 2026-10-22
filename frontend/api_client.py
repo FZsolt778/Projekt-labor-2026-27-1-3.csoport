@@ -277,10 +277,13 @@ class ApiClient:
             raise ApiError(None, "Hálózati hiba a szerverrel való kapcsolatban")
         _log(f"<- {response.status_code} {method} {path} ({(perf_counter() - started) * 1000:.0f} ms) {_response_text(response)}")
 
-        if response.status_code == 401 and auth and self.token is not None:
-            self.logout()
-            self.events.session_expired.emit()
-            raise ApiError(401, "Lejárt a munkamenet, jelentkezz be újra")
+        if response.status_code == 401 and auth:
+            if self.token is not None:
+                self.logout()
+                self.events.session_expired.emit()
+                raise ApiError(401, "Lejárt a munkamenet, jelentkezz be újra")
+            # No token: FastAPI answers "Not authenticated" in English
+            raise ApiError(401, _STATUS_MESSAGES[401])
         if response.is_error:
             raise _error_from_response(response)
         if response.status_code == 204 or not response.content:
