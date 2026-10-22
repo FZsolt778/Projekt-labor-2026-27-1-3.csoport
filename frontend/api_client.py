@@ -1,15 +1,4 @@
-# API client for the desktop app: HTTP calls, session, error messages, labels, time formatting.
-#
-# Usage:
-#   from api_client import api, ApiError, run_in_background
-#   api.login(email, password)                      # stores the token
-#   parcels = api.get("/parcels/my", params={"scope": "active"})
-#   run_in_background(api.get, "/courier/tasks", on_success=self.show_tasks, on_error=self.show_error)
-#   api.events.session_expired.connect(self.show_login)
-#
-# Path parameters from user input must be quoted: api.get(f"/parcels/track/{quote(tn, safe='')}")
-#
-# Request log in the terminal: set API_DEBUG=1 (environment or .env)
+# HTTP calls, session, error messages, labels, time formatting.
 
 import json as jsonlib
 import os
