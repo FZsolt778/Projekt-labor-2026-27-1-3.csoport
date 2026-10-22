@@ -1,19 +1,16 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from server.models import User, UserRole
 from server.API.auth.schemas import PasswordChangeRequest, RegisterRequest, TokenResponse
+from server.API.user.services import get_active_user_by_email
 
 from server.src.config import settings
 from server.src.sec import hash_pass, verify_pass, create_access_token
 
 
 def register(db: Session, data: RegisterRequest) -> User:
-    existing_user = db.scalar(
-        select(User).where(User.email == data.email, User.is_active.is_(True))
-    )
-    if existing_user:
+    if get_active_user_by_email(db, data.email) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email cím már foglalt egy aktív felhasználónál!",
@@ -33,9 +30,7 @@ def register(db: Session, data: RegisterRequest) -> User:
 
 
 def login(db: Session, email: str, password: str) -> TokenResponse:
-    user = db.scalar(
-        select(User).where(User.email == email, User.is_active.is_(True))
-    )
+    user = get_active_user_by_email(db, email)
     if not user or not verify_pass(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
