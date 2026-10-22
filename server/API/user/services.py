@@ -20,11 +20,16 @@ DELIVERY_OPEN_STATUSES = frozenset({
 })
 
 
+def get_active_user_by_email(db: Session, email: str) -> User | None:
+    # Active user by case-insensitive email (matches the uq_users_email index)
+    return db.scalar(
+        select(User).where(func.lower(User.email) == email.lower(), User.is_active.is_(True))
+    )
+
+
 def _check_email_unique(db: Session, email: str, exclude_user_id: int | None = None) -> None:
-    query = select(User).where(User.email == email, User.is_active.is_(True))
-    if exclude_user_id is not None:
-        query = query.where(User.id != exclude_user_id)
-    if db.scalar(query) is not None:
+    existing = get_active_user_by_email(db, email)
+    if existing is not None and existing.id != exclude_user_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Az email cím már foglalt egy másik aktív felhasználónál",
