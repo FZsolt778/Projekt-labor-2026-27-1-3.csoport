@@ -74,7 +74,7 @@ def add_event(
     courier_id: int | None = None,
     note: str | None = None,
 ) -> ParcelEvent:
-    # Status change + event log + milestone timestamp in one place. Does not commit.
+    # Status change + event log + milestone timestamp in one place.
     # - Courier-bound statuses (pickup_assigned, picked_up, delivery_assigned, out_for_delivery,
     #   delivered, failed) require courier_id (DB CHECK)
     # - Courier swap: call with the same status and the new courier_id (milestone unchanged).
@@ -116,7 +116,6 @@ def _slot_window(slot: TimeSlot | None) -> tuple:
 
 
 def _contains(term: str) -> str:
-    # LIKE pattern with % and _ escaped (used with escape="\\")
     escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
@@ -203,15 +202,20 @@ def update_my_parcel(db: Session, user: User, parcel_id: int, data: ParcelUpdate
         _slot_window(data.pickup_slot) if data.pickup_slot is not None
         else (parcel.pickup_window_start, parcel.pickup_window_end)
     )
+    # Requested delivery: the sent one, or the current one
+    if "delivery_date" in data.model_fields_set:
+        new_delivery = (data.delivery_date, *_slot_window(data.delivery_slot))
+    else:
+        new_delivery = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end)
+    delivery_date, delivery_start, _ = new_delivery
     # The requested delivery must still come after the pickup
-    if parcel.delivery_date is not None:
-        if parcel.delivery_date < new_date or (
-            parcel.delivery_date == new_date and parcel.delivery_window_start < new_end
-        ):
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "A felvétel nem lehet a kért kiszállítás után",
-            )
+    if delivery_date is not None and (
+        delivery_date < new_date or (delivery_date == new_date and delivery_start < new_end)
+    ):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "A felvétel nem lehet a kért kiszállítás után",
+        )
 
     if data.size is not None:
         parcel.size = data.size
@@ -220,6 +224,7 @@ def update_my_parcel(db: Session, user: User, parcel_id: int, data: ParcelUpdate
     if data.recipient_address is not None:
         _apply(parcel.recipient, data.recipient_address.model_dump())
     parcel.pickup_date, parcel.pickup_window_start, parcel.pickup_window_end = new_date, new_start, new_end
+    parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_delivery
 
     # The assigned courier may not work on the new date, the logistician assigns again
     if (new_date, new_start, new_end) != old_pickup and parcel.pickup_courier_id is not None:
