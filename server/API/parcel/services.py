@@ -40,10 +40,9 @@ _LIST_OPTIONS = (
 )
 
 
-# --- Shared helpers (used by other modules) ----------------------
+# --- Helpers ----------------------
 
 def generate_tracking_number(db: Session) -> str:
-    # Random, unguessable id, e.g. FC7K2M9QX4TB
     while True:
         tracking_number = TRACKING_PREFIX + "".join(secrets.choice(TRACKING_ALPHABET) for _ in range(10))
         if db.scalar(select(Parcel.id).where(Parcel.tracking_number == tracking_number)) is None:
