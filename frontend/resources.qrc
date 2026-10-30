@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="auth.svg">resources/icons/auth.svg</file>
+        <file alias="mail.svg">resources/icons/mail.svg</file>
+        <file alias="lock-keyhole.svg">resources/icons/lock-keyhole.svg</file>
+        <file alias="phone.svg">resources/icons/phone.svg</file>
+        <file alias="barcode.svg">resources/icons/barcode.svg</file>
+        <file alias="package-open.svg">resources/icons/package-open.svg</file>
+        <file alias="package-search.svg">resources/icons/package-search.svg</file>
+        <file alias="package.svg">resources/icons/package.svg</file>
+        <file alias="rotate-ccw-clock.svg">resources/icons/rotate-ccw-clock.svg</file>
+        <file alias="search.svg">resources/icons/search.svg</file>
+
+    </qresource>
+    <qresource prefix="/illustrations">
+        <file alias="auth.svg">resources/illustrations/auth.svg</file>
+        <file alias="home.svg">resources/illustrations/home.svg</file>
+        <file alias="track.svg">resources/illustrations/track.svg</file>
+    </qresource>
+</RCC>
