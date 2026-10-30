@@ -44,7 +44,7 @@ def setup_theme(app: QApplication):
             background-color: {SURFACE};
             color: {TEXT};
             border: 1px solid {BORDER};
-            border-radius: 6px;
+            border-radius: 25px;
             padding: 8px 10px;
             selection-background-color: {ACCENT};
         }}
@@ -57,7 +57,7 @@ def setup_theme(app: QApplication):
             background-color: {SURFACE};
             color: {TEXT};
             border: 1px solid {BORDER};
-            border-radius: 6px;
+            border-radius: 25px;
             padding: 8px 14px;
         }}
 
