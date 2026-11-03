@@ -1,6 +1,7 @@
-# Initial data: warehouse and first admin.
-# Run from the project root (DB must be running): .venv\Scripts\python -m server.seed
-# Idempotent, existing data is not modified.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from getpass import getpass
 from sqlalchemy import select
 from sqlalchemy.orm import Session

@@ -53,13 +53,23 @@ class ParcelCreate(RequestModel):
 
 class ParcelUpdate(PatchModel):
     #Customer edit, until the day before pickup
+    nullable_fields = frozenset({"delivery_date", "delivery_slot"})
+
     size: ParcelSize | None = None
     pickup_date: date | None = None
     pickup_slot: TimeSlot | None = None
+    # Requested delivery (both null: no request)
+    delivery_date: date | None = None
+    delivery_slot: TimeSlot | None = None
     sender: ContactInfoUpdate | None = None
     recipient_address: AddressUpdate | None = None
 
     _pickup_date = field_validator("pickup_date")(_check_pickup_date)
+
+    @model_validator(mode="after")
+    def _delivery_pair(self):
+        _check_delivery_pair(self)
+        return self
 
 
 class AdminParcelUpdate(PatchModel):
