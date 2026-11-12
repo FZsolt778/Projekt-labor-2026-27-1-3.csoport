@@ -61,11 +61,37 @@ STATUS_LABELS = {
     "cancelled": "Lemondva",
 }
 
+
+from enum import Enum
+
+class ROLE(Enum):
+    QUEST = None
+    CUSTOMER = "customer"
+    COURIER = "courier"
+    LOGISTICIAN = "logistician"
+    ADMIN = "admin"
+
+
 ROLE_LABELS = {
-    "customer": "Ügyfél",
-    "courier": "Futár",
-    "logistician": "Raktáros",
-    "admin": "Adminisztrátor",
+    "customer": {
+        "title": "Ügyfél",
+        "value": "customer"
+     },
+    "courier": 
+        {
+        "title":"Futár",
+        "value":"courier",
+        },
+    "logistician": 
+        {
+            "title":"Raktáros",
+            "value":"logistician"
+        },
+    "admin":
+        {
+            "title":"Adminisztrátor",
+            "value":"admin"
+        } 
 }
 
 TASK_LABELS = {"pickup": "Felvétel", "delivery": "Kiszállítás"}
@@ -235,6 +261,28 @@ class ApiClient:
         self.token = None
         self.role = None
         self.user_id = None
+    
+    def registration(self, last_name: str, first_name: str, email: str, password: str, phone: str | None, postal_code: str | None, city: str | None, street: str | None, house_number: str | None) -> dict:
+        data = self._request("POST",
+                "/auth/register",
+                json={
+                    "last_name": last_name,
+                    "first_name": first_name,
+                    "email": email,
+                    "password": password,
+                    "phone": phone,
+                    "postal_code": postal_code,
+                    "city": city,
+                    "street": street,
+                    "house_number": house_number
+                }, auth=False)
+        
+        self.token = data["access_token"]
+        self.role = data["role"]
+        self.user_id = data["user_id"]
+        return data
+    
+
 
     # --- HTTP methods (return the parsed JSON, or None for empty responses) ---
 

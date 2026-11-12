@@ -10,6 +10,13 @@
         <file alias="package.svg">resources/icons/package.svg</file>
         <file alias="rotate-ccw-clock.svg">resources/icons/rotate-ccw-clock.svg</file>
         <file alias="search.svg">resources/icons/search.svg</file>
+        <file alias="boxes-linked.svg">resources/icons/boxes-linked.svg</file>
+        <file alias="log-out.svg">resources/icons/log-out.svg</file>
+        <file alias="package-check.svg">resources/icons/package-check.svg</file>
+        <file alias="package-plus.svg">resources/icons/package-plus.svg</file>
+        <file alias="package-x.svg">resources/icons/package-x.svg</file>
+        <file alias="package-start.svg">resources/icons/package_start.svg</file>
+
 
     </qresource>
     <qresource prefix="/illustrations">
