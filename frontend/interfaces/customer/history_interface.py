@@ -34,7 +34,7 @@ def _load_parcel_history() -> dict[str, list[dict]]:
     }
 
 
-class HistoryInterface(QFrame):
+class ShipHistoryInterface(QFrame):
     def __init__(self, text: str = "History", parent=None):
         super().__init__(parent=parent)
         self.setObjectName(text.replace(" ", "-"))

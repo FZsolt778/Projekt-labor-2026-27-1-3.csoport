@@ -9,7 +9,7 @@ from server.API.user.schemas import UserRead
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=TokenResponse)
 def register(data: RegisterRequest, db: DbSession):
     return services.register(db, data)
 

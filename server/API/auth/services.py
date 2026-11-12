@@ -26,7 +26,15 @@ def register(db: Session, data: RegisterRequest) -> User:
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    print('registration');
+    access_token = create_access_token(new_user.id, new_user.role)
+    return TokenResponse(
+            access_token=access_token,
+            expires_in=settings.JWT_EXPIRE_MINUTES * 60,
+            role=new_user.role,
+            user_id=new_user.id,
+        )
+    
 
 
 def login(db: Session, email: str, password: str) -> TokenResponse:

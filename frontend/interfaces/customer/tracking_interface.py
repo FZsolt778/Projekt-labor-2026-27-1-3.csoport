@@ -21,6 +21,9 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen
 from api_client import ApiError, api, run_in_background
 from PySide6.QtWidgets import QStackedLayout
 
+from types import SimpleNamespace
+import json
+
 
 class ParcelTrackingTimeline(QWidget):
     STEPS = (
@@ -112,76 +115,7 @@ class ParcelTrackingTimeline(QWidget):
 
 
 class TrackingInterface(QFrame):
-    '''
-    def onClickLogin(self) -> None:
-        self._clear_field_error(self.emailEdit, self.emailErrorLabel)
-        self._clear_field_error(self.passwordEdit, self.passwordErrorLabel)
-        self.loginErrorLabel.clear()
-        self.loginErrorLabel.hide()
-
-        email = self.emailEdit.text().strip()
-        password = self.passwordEdit.text()
-        is_valid = True
-
-        if not email:
-            self._show_field_error(
-                self.emailEdit,
-                self.emailErrorLabel,
-                "Az email cím megadása kötelező.",
-            )
-            is_valid = False
-
-        if not password:
-            self._show_field_error(
-                self.passwordEdit,
-                self.passwordErrorLabel,
-                "A jelszó megadása kötelező.",
-            )
-            is_valid = False
-
-        if not is_valid:
-            return
-
-        self.formFrame.setEnabled(False)
-        self.loginButton.setText("Bejelentkezés folyamatban...")
-        run_in_background(
-            api.login,
-            email,
-            password,
-            on_success=self._on_login_success,
-            on_error=self._on_login_error,
-        )
-
-    @staticmethod
-    def _show_field_error(field: QWidget, label: QLabel, message: str) -> None:
-        field.setStyleSheet("border: 1px solid #D13438;")
-        label.setText(message)
-        label.show()
-
-    @staticmethod
-    def _clear_field_error(field: QWidget, label: QLabel) -> None:
-        field.setStyleSheet("")
-        label.clear()
-        label.hide()
-
-    def _on_login_input_changed(self, field: QWidget, label: QLabel) -> None:
-        self._clear_field_error(field, label)
-        self.loginErrorLabel.clear()
-        self.loginErrorLabel.hide()
-
-    def _on_login_success(self) -> None:
-        self._finish_login_request()
-        
-
-    def _on_login_error(self, error: ApiError) -> None:
-        self._finish_login_request()
-        self.loginErrorLabel.setText(error.message)
-        self.loginErrorLabel.show()
-
-    def _finish_login_request(self) -> None:
-        self.formFrame.setEnabled(True)
-        self.loginButton.setText("Bejelentkezés")
-    '''
+    
 
 
     def __init__(self, text: str, parent=None):
@@ -200,6 +134,9 @@ class TrackingInterface(QFrame):
         # Háttér
         self.illustration = QSvgWidget(
             ":/illustrations/track.svg"
+        )
+        self.illustration.renderer().setAspectRatioMode(
+            Qt.AspectRatioMode.KeepAspectRatio
         )
         self.illustration.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents
@@ -225,11 +162,6 @@ class TrackingInterface(QFrame):
         self.mainLayout.addWidget(self.contentWidget)
         self.mainLayout.setCurrentWidget(self.contentWidget)
 
-        # Innentől a meglévő elemeidet add hozzá
-        # self.title = ...
-        # self.description = ...
-
-         #-------Form Title-------
         self.title = SubtitleLabel("Csomagkövetés", self.contentWidget)
         setFont(self.title, 60, QFont.Bold)
         self.title.setAlignment(Qt.AlignCenter)
@@ -281,7 +213,7 @@ class TrackingInterface(QFrame):
         self.searchButton = PrimaryPushButton("", self.searchContainer)
         self.searchButton.setIcon(QIcon(":/icons/search.svg"))
         self.searchButton.setIconSize(QSize(36, 36))
-        #self.searchButton.clicked.connect(self.onClickLogin)
+        self.searchButton.clicked.connect(self.onClickTrack)
         self.searchButton.setFixedHeight(100)
         self.searchButton.setFixedWidth(100)
         self.searchButton.setStyleSheet("border-radius: 25px; background-color: #2383E2;")
@@ -295,11 +227,16 @@ class TrackingInterface(QFrame):
         self.searchLayout.addWidget(self.searchButton, 1, Qt.AlignVCenter)
         self.searchLayout.addStretch(1)
 
+
+
+
+
+
         #Tracking Card
         self.trackingCard = CardWidget(self.contentWidget)
         self.trackingCard.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            vertical_policy,
+            QSizePolicy.Policy.Ignored,
         )
         self.trackingCardLayout = QHBoxLayout()
         self.trackingCardLayout.setContentsMargins(0, 0, 0, 0)
@@ -312,11 +249,11 @@ class TrackingInterface(QFrame):
         self.trackingCardContent.setContentsMargins(24, 20, 24, 20)
         self.trackingCardContent.setSpacing(10)
 
-        self.trackingNumberLabel = QLabel("Csomagszám: HU-2026-004281")
+        self.trackingNumberLabel = QLabel("")
         self.trackingNumberLabel.setStyleSheet(
             "font-size: 15px; font-weight: 600; background: transparent;"
         )
-        self.packageSizeLabel = QLabel("M méret")
+        self.packageSizeLabel = QLabel("")
         self.packageSizeLabel.setStyleSheet(
             "color: #6B6B6B; background: transparent;"
         )
@@ -326,7 +263,7 @@ class TrackingInterface(QFrame):
         self.trackingHeader.addWidget(self.packageSizeLabel)
         self.trackingCardContent.addLayout(self.trackingHeader)
 
-        self.currentStatusLabel = QLabel("Kiszállítás alatt")
+        self.currentStatusLabel = QLabel("")
         self.currentStatusLabel.setStyleSheet(
             "color: #2383E2; font-size: 20px; font-weight: 700;"
             "background: transparent;"
@@ -334,37 +271,35 @@ class TrackingInterface(QFrame):
         self.trackingCardContent.addWidget(self.currentStatusLabel)
 
         self.trackingTimeline = ParcelTrackingTimeline(
-            "out_for_delivery",
+            "booked",
             self.trackingCard,
         )
         self.trackingCardContent.addWidget(self.trackingTimeline)
 
-        self.routeLabel = QLabel(
-            "Budapest, feladó  →  Szeged, címzett"
-        )
+        self.routeLabel = QLabel("")
         self.routeLabel.setWordWrap(True)
         self.routeLabel.setStyleSheet(
             "font-size: 14px; font-weight: 600; background: transparent;"
         )
         self.trackingCardContent.addWidget(self.routeLabel)
 
-        self.deliveryDateLabel = QLabel(
-            "Várható kézbesítés: 2026. október 31."
-        )
+        self.deliveryDateLabel = QLabel("")
         self.deliveryDateLabel.setStyleSheet(
             "color: #6B6B6B; background: transparent;"
         )
         self.trackingCardContent.addWidget(self.deliveryDateLabel)
 
-        self.lastEventLabel = QLabel(
-            "Legutóbbi esemény: A csomag úton van a címzetthez."
-        )
+        self.lastEventLabel = QLabel("") #Legutóbbi esemény: A csomag úton van a címzetthez.
         self.lastEventLabel.setWordWrap(True)
         self.lastEventLabel.setStyleSheet(
             "color: #6B6B6B; background: transparent;"
         )
         self.trackingCardContent.addWidget(self.lastEventLabel)
         self.trackingCardContent.addStretch(1)
+
+
+
+       
 
         #--------Add Widgets to Vertical Layout---------
         self.hVoxLayout.addSpacing(15)
@@ -373,10 +308,54 @@ class TrackingInterface(QFrame):
         self.hVoxLayout.addWidget(self.searchContainer,3)
         self.hVoxLayout.addLayout(self.trackingCardLayout,5)
         self.hVoxLayout.addSpacing(15)
+        
+        #hide tracking card
+        self.hide_widget(self.trackingCard)
+        
+        
+        
+    def set_tracking_card(self, parcelTracking) -> None:
+        self.trackingNumberLabel.setText(f"Csomagszám: {parcelTracking['tracking_number']}");
+        self.packageSizeLabel.setText(f"{parcelTracking['size']} Méret");
+        self.routeLabel.setText(f"{parcelTracking['sender']['city']}, feladó  →  {parcelTracking['recipient']['city']}, címzett")
+        self.deliveryDateLabel.setText(f"Várható kézbesítés: {parcelTracking['delivery_date']}")
+        
+        self.set_tracking_status(parcelTracking['status'])
+        
+        if not self.trackingCard.isVisible():
+            self.trackingCard.show();
+        
+
+
 
     def set_tracking_status(self, status: str) -> None:
         self.trackingTimeline.set_status(status)
         self.currentStatusLabel.setText(
             ParcelTrackingTimeline.STATUS_LABELS[self.trackingTimeline.status]
         )
+        
+    
+    def hide_widget(self, widget : QWidget) -> None:
+        sp_retain = widget.sizePolicy()
+        sp_retain.setRetainSizeWhenHidden(True)
+        widget.setSizePolicy(sp_retain)
+        widget.hide()
+        
+    def onClickTrack(self) -> None:
+        self.searchButton.setEnabled(False)
+        trackingNumber : str = self.searchEdit.text().strip()
+        run_in_background(
+            api.get,
+            f"/parcels/track/{trackingNumber}",
+            on_success=self._on_tracking_success,
+            on_error=self._on_tracking_error,
+        )
+    def _on_tracking_success(self, result: object) -> None:
+        self.set_tracking_card(result)
+        self.searchButton.setEnabled(True)
+        
+    def _on_tracking_error(self) -> None:
+        self.searchButton.setEnabled(True)
+    
+    
         
