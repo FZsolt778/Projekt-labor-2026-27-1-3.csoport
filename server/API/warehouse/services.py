@@ -1,4 +1,3 @@
-from datetime import date
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,23 +7,25 @@ from server.API.user.services import get_courier_or_404
 from server.API.warehouse.schemas import CheckInRequest, DeliveryAssignRequest, PickupAssignRequest, WarehouseUpdate
 
 # Bulk ops: validate every parcel first, then modify (all or nothing):
-# missing id → 404, wrong status → 409
+# unknown tracking number → 404, wrong status → 409
 
 # Physically in the warehouse (also used by stat)
 IN_WAREHOUSE_STATUSES = frozenset({ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED})
 
 
-def _load_parcels(db: Session, parcel_ids: list[int]) -> list[Parcel]:
-    # Locked rows in request order, missing id → 404
-    parcels = db.scalars(select(Parcel).where(Parcel.id.in_(parcel_ids)).with_for_update()).all()
-    by_id = {parcel.id: parcel for parcel in parcels}
-    missing = [parcel_id for parcel_id in parcel_ids if parcel_id not in by_id]
+def _load_parcels(db: Session, tracking_numbers: list[str]) -> list[Parcel]:
+    # Locked rows in request order, unknown tracking number → 404 (the schema already normalized them)
+    parcels = db.scalars(
+        select(Parcel).where(Parcel.tracking_number.in_(tracking_numbers)).with_for_update()
+    ).all()
+    by_number = {parcel.tracking_number: parcel for parcel in parcels}
+    missing = [number for number in tracking_numbers if number not in by_number]
     if missing:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            f"Nem található csomag: {', '.join(map(str, missing))}",
+            f"Nem található csomag: {', '.join(missing)}",
         )
-    return [by_id[parcel_id] for parcel_id in parcel_ids]
+    return [by_number[number] for number in tracking_numbers]
 
 
 def _require_statuses(parcels: list[Parcel], *allowed: ParcelStatus) -> None:
@@ -80,7 +81,7 @@ def list_couriers(db: Session) -> list[User]:
 
 
 def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     _require_statuses(parcels, ParcelStatus.PICKED_UP, ParcelStatus.FAILED)
 
     warehouse = get_warehouse(db)
@@ -108,7 +109,7 @@ def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
 
 def assign_pickup(db: Session, actor: User, data: PickupAssignRequest) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after pickup
     _require_statuses(parcels, ParcelStatus.BOOKED, ParcelStatus.PICKUP_ASSIGNED)
 
@@ -123,41 +124,28 @@ def assign_pickup(db: Session, actor: User, data: PickupAssignRequest) -> list[P
 
 def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after the courier started
     _require_statuses(parcels, ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED)
 
-    if data.delivery_date is not None:
-        too_early = [p.tracking_number for p in parcels if data.delivery_date < p.pickup_date]
-        if too_early:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"A kiszállítás napja nem lehet korábbi a felvételnél: {', '.join(too_early)}",
-            )
-    else:
-        # Keep the requested delivery time, it must exist and not be in the past
-        today = date.today()
-        missing = [p.tracking_number for p in parcels if p.delivery_date is None or p.delivery_date < today]
-        if missing:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"Add meg a kiszállítás napját és idősávját ezeknél a csomagoknál: {', '.join(missing)}",
-            )
+    too_early = [p.tracking_number for p in parcels if data.delivery_date < p.pickup_date]
+    if too_early:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"A kiszállítás napja nem lehet korábbi a felvételnél: {', '.join(too_early)}",
+        )
 
+    new_window = (data.delivery_date, data.delivery_slot.start, data.delivery_slot.end)
     for parcel in parcels:
-        new_window = None
-        if data.delivery_date is not None:
-            new_window = (data.delivery_date, data.delivery_slot.start, data.delivery_slot.end)
         current_window = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end)
         unchanged = (
             parcel.status == ParcelStatus.DELIVERY_ASSIGNED
             and parcel.delivery_courier_id == courier.id
-            and new_window in (None, current_window)
+            and new_window == current_window
         )
         if unchanged:
             continue
-        if new_window is not None:
-            parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_window
+        parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_window
         parcel.delivery_courier_id = courier.id
         add_event(db, parcel, ParcelStatus.DELIVERY_ASSIGNED, actor=actor, courier_id=courier.id)
     db.commit()
