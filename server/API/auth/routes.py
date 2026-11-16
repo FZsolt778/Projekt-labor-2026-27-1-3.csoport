@@ -9,7 +9,8 @@ from server.API.user.schemas import UserRead
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=TokenResponse)
+# New customer account (201 Created), the response logs it in at once
+@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(data: RegisterRequest, db: DbSession):
     return services.register(db, data)
 
