@@ -1,6 +1,11 @@
 from PySide6.QtGui import QIcon
 from api_client import api, ROLE
+from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import NavigationItemPosition, FluentWindow
+from .admin.parcels_interface import ParcelsInterface
+from .admin.statistics_interface import StatisticsInterface
+from .admin.users_interface import UsersInterface
+from .admin.warehouse_settings_interface import WarehouseSettingsInterface
 from .auth.auth_interface import AuthInterface
 from .customer.booking_interface import BookingInterface
 from .customer.history_interface import ShipHistoryInterface
@@ -113,8 +118,34 @@ class Window(FluentWindow):
     def initLogistician(self):
         print('init logistician')
         
+    #Admin
     def initAdmin(self):
         print('init admin')
+        
+        #Users Interface
+        usersInterface = UsersInterface("Admin Users", self)
+        self.addSubInterface(usersInterface, FIF.PEOPLE, "Felhasználók", NavigationItemPosition.TOP)
+        self.subInterfaces.append(usersInterface)
+        
+        #Parcels Interface
+        parcelsInterface = ParcelsInterface("Admin Parcels", self)
+        self.addSubInterface(parcelsInterface, FIF.DOCUMENT, "Csomagok", NavigationItemPosition.TOP)
+        self.subInterfaces.append(parcelsInterface)
+        
+        #Statistics Interface
+        statisticsInterface = StatisticsInterface("Admin Statistics", self)
+        self.addSubInterface(statisticsInterface, FIF.PIE_SINGLE, "Statisztikák", NavigationItemPosition.TOP)
+        self.subInterfaces.append(statisticsInterface)
+        
+        #Warehouse Interface
+        warehouseInterface = WarehouseSettingsInterface("Admin Warehouse", self)
+        self.addSubInterface(warehouseInterface, FIF.HOME, "Raktár", NavigationItemPosition.TOP)
+        self.subInterfaces.append(warehouseInterface)
+        
+        #Trackin Interface
+        trackingInterface = TrackingInterface('Tracking Interface', self)
+        self.addSubInterface(trackingInterface, QIcon(":/icons/package-search.svg"), 'Nyomkövetés')
+        self.subInterfaces.append(trackingInterface)
         
     def initWindow(self):
         #self.resize(900, 700)
