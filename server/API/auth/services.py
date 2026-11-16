@@ -9,7 +9,7 @@ from server.src.config import settings
 from server.src.sec import hash_pass, verify_pass, create_access_token
 
 
-def register(db: Session, data: RegisterRequest) -> User:
+def register(db: Session, data: RegisterRequest) -> TokenResponse:
     if get_active_user_by_email(db, data.email) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -26,7 +26,6 @@ def register(db: Session, data: RegisterRequest) -> User:
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    print('registration');
     access_token = create_access_token(new_user.id, new_user.role)
     return TokenResponse(
             access_token=access_token,
