@@ -1,4 +1,3 @@
-from datetime import date
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -129,37 +128,24 @@ def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> li
     # Locked after the courier started
     _require_statuses(parcels, ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED)
 
-    if data.delivery_date is not None:
-        too_early = [p.tracking_number for p in parcels if data.delivery_date < p.pickup_date]
-        if too_early:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"A kiszállítás napja nem lehet korábbi a felvételnél: {', '.join(too_early)}",
-            )
-    else:
-        # Keep the requested delivery time, it must exist and not be in the past
-        today = date.today()
-        missing = [p.tracking_number for p in parcels if p.delivery_date is None or p.delivery_date < today]
-        if missing:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"Add meg a kiszállítás napját és idősávját ezeknél a csomagoknál: {', '.join(missing)}",
-            )
+    too_early = [p.tracking_number for p in parcels if data.delivery_date < p.pickup_date]
+    if too_early:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"A kiszállítás napja nem lehet korábbi a felvételnél: {', '.join(too_early)}",
+        )
 
+    new_window = (data.delivery_date, data.delivery_slot.start, data.delivery_slot.end)
     for parcel in parcels:
-        new_window = None
-        if data.delivery_date is not None:
-            new_window = (data.delivery_date, data.delivery_slot.start, data.delivery_slot.end)
         current_window = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end)
         unchanged = (
             parcel.status == ParcelStatus.DELIVERY_ASSIGNED
             and parcel.delivery_courier_id == courier.id
-            and new_window in (None, current_window)
+            and new_window == current_window
         )
         if unchanged:
             continue
-        if new_window is not None:
-            parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_window
+        parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_window
         parcel.delivery_courier_id = courier.id
         add_event(db, parcel, ParcelStatus.DELIVERY_ASSIGNED, actor=actor, courier_id=courier.id)
     db.commit()

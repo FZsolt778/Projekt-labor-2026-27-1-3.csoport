@@ -44,16 +44,14 @@ class PickupAssignRequest(RequestModel):
 
 
 class DeliveryAssignRequest(RequestModel):
-    #Assign delivery to a courier (no date/slot: keep requested delivery time)
+    #Assign delivery to a courier, the logistician sets the delivery day and slot here
     courier_id: PositiveInt
     tracking_numbers: TrackingNumberList
-    delivery_date: date | None = None
-    delivery_slot: TimeSlot | None = None
+    delivery_date: date
+    delivery_slot: TimeSlot
 
     @model_validator(mode="after")
-    def _delivery_pair(self):
-        if (self.delivery_date is None) != (self.delivery_slot is None):
-            raise ValueError("A kiszállítás napját és idősávját együtt kell megadni")
-        if self.delivery_date is not None and self.delivery_date < date.today():
+    def _not_in_past(self):
+        if self.delivery_date < date.today():
             raise ValueError("A kiszállítás napja nem lehet a múltban")
         return self

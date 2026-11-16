@@ -146,7 +146,7 @@ def _get_editable_parcel(db: Session, user: User, parcel_id: int) -> Parcel:
 def create_parcel(db: Session, data: ParcelCreate, user: User | None) -> Parcel:
     recipient_user = get_active_user_by_email(db, data.recipient.email)
     pickup_start, pickup_end = _slot_window(data.pickup_slot)
-    delivery_start, delivery_end = _slot_window(data.delivery_slot)
+    # No delivery time yet, the logistician sets it at assignment
     parcel = Parcel(
         tracking_number=generate_tracking_number(db),
         size=data.size,
@@ -155,9 +155,6 @@ def create_parcel(db: Session, data: ParcelCreate, user: User | None) -> Parcel:
         pickup_date=data.pickup_date,
         pickup_window_start=pickup_start,
         pickup_window_end=pickup_end,
-        delivery_date=data.delivery_date,
-        delivery_window_start=delivery_start,
-        delivery_window_end=delivery_end,
     )
     db.add(parcel)
     add_event(db, parcel, ParcelStatus.BOOKED, actor=user)
@@ -204,14 +201,14 @@ def update_my_parcel(db: Session, user: User, parcel_id: int, data: ParcelUpdate
         _slot_window(data.pickup_slot) if data.pickup_slot is not None
         else (parcel.pickup_window_start, parcel.pickup_window_end)
     )
-    # The requested delivery must still come after the pickup
+    # A delivery time set by the admin must still come after the pickup (also a DB CHECK)
     if parcel.delivery_date is not None:
         if parcel.delivery_date < new_date or (
             parcel.delivery_date == new_date and parcel.delivery_window_start < new_end
         ):
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "A felvétel nem lehet a kért kiszállítás után",
+                "A felvétel nem lehet a megadott kiszállítás után",
             )
 
     if data.size is not None:

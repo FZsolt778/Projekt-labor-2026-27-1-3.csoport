@@ -119,74 +119,60 @@ class BookingInterface(QFrame):
         self.pickupDate = self.create_date_edit()
         self.pickupSlot = self.create_slot_combo()
 
-        self.deliveryDate = self.create_date_edit()
-        self.deliverySlot = self.create_slot_combo()
-        self.deliverySlot.setCurrentIndex(1)
-
         pickupTitle = SubtitleLabel(
             "Csomag felvétele",
             self.formContent
         )
         setFont(pickupTitle, 16, QFont.Weight.DemiBold)
 
-        deliveryTitle = SubtitleLabel(
-            "Kézbesítés",
-            self.formContent
-        )
-        setFont(deliveryTitle, 16, QFont.Weight.DemiBold)
+        # deliveryTitle = SubtitleLabel(
+        #     "Kézbesítés",
+        #     self.formContent
+        # )
+        # setFont(deliveryTitle, 16, QFont.Weight.DemiBold)
 
         self.scheduleLayout.addWidget(pickupTitle, 0, 0)
-        self.scheduleLayout.addWidget(deliveryTitle, 0, 1)
+        # self.scheduleLayout.addWidget(deliveryTitle, 0, 1)
 
         self.scheduleLayout.addWidget(
             QLabel("Dátum", self.formContent), 1, 0
-        )
-        self.scheduleLayout.addWidget(
-            QLabel("Dátum", self.formContent), 1, 1
         )
 
         pickupDateField, self.pickupDateErrorLabel = self.create_field_container(
             self.pickupDate
         )
-        deliveryDateField, self.deliveryDateErrorLabel = self.create_field_container(
-            self.deliveryDate
-        )
         self.field_errors["pickup_date"] = (
             self.pickupDate,
             self.pickupDateErrorLabel,
         )
-        self.field_errors["delivery_date"] = (
-            self.deliveryDate,
-            self.deliveryDateErrorLabel,
-        )
 
         self.scheduleLayout.addWidget(pickupDateField, 2, 0)
-        self.scheduleLayout.addWidget(deliveryDateField, 2, 1)
 
         self.scheduleLayout.addWidget(
             QLabel("Idősáv", self.formContent), 3, 0
-        )
-        self.scheduleLayout.addWidget(
-            QLabel("Idősáv", self.formContent), 3, 1
         )
 
         pickupSlotField, self.pickupSlotErrorLabel = self.create_field_container(
             self.pickupSlot
         )
-        deliverySlotField, self.deliverySlotErrorLabel = self.create_field_container(
-            self.deliverySlot
-        )
         self.field_errors["pickup_slot"] = (
             self.pickupSlot,
             self.pickupSlotErrorLabel,
         )
-        self.field_errors["delivery_slot"] = (
-            self.deliverySlot,
-            self.deliverySlotErrorLabel,
-        )
 
         self.scheduleLayout.addWidget(pickupSlotField, 4, 0)
-        self.scheduleLayout.addWidget(deliverySlotField, 4, 1)
+
+        # # The delivery time is set by the logistician, not at booking
+        # self.deliveryInfo = BodyLabel(
+        #     "A kézbesítés napját és idősávját a raktár jelöli ki, miután a csomag "
+        #     "beérkezett. Az időpontot a csomagkövetésben látod majd.",
+        #     self.formContent
+        # )
+        # self.deliveryInfo.setWordWrap(True)
+        # self.deliveryInfo.setStyleSheet("color: #6B6B6B;")
+        # self.scheduleLayout.addWidget(
+        #     self.deliveryInfo, 1, 1, 4, 1, Qt.AlignmentFlag.AlignTop
+        # )
 
         self.scheduleLayout.setColumnStretch(0, 1)
         self.scheduleLayout.setColumnStretch(1, 1)
@@ -396,34 +382,7 @@ class BookingInterface(QFrame):
             )
             is_valid = False
 
-        if self.deliveryDate.date() < self.pickupDate.date():
-            self._show_field_error(
-                self.deliveryDate,
-                self.deliveryDateErrorLabel,
-                "A kézbesítés nem lehet a felvétel előtt.",
-            )
-            is_valid = False
-        elif (
-            self.deliveryDate.date() == self.pickupDate.date()
-            and self._slot_start(self.deliverySlot.currentText())
-            < self._slot_end(self.pickupSlot.currentText())
-        ):
-            self._show_field_error(
-                self.deliverySlot,
-                self.deliverySlotErrorLabel,
-                "Azonos napon a kézbesítési idősávnak a felvétel után kell lennie.",
-            )
-            is_valid = False
-
         return is_valid
-
-    @staticmethod
-    def _slot_start(slot: str) -> int:
-        return int(slot.split("-")[0].replace(":", ""))
-
-    @staticmethod
-    def _slot_end(slot: str) -> int:
-        return int(slot.split("-")[1].replace(":", ""))
 
     def onClickBooking(self) -> None:
         if not self._validate_booking():
@@ -530,10 +489,4 @@ class BookingInterface(QFrame):
             ),
 
             "pickup_slot": self.pickupSlot.currentText(),
-
-            "delivery_date": self.deliveryDate.date().toString(
-                "yyyy-MM-dd"
-            ),
-
-            "delivery_slot": self.deliverySlot.currentText(),
         }

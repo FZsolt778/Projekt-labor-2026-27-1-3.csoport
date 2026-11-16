@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtCore import Qt, QSize, QRect
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen
-from api_client import ApiError, api, run_in_background
+from api_client import ApiError, api, format_date, format_window, run_in_background
 from PySide6.QtWidgets import QStackedLayout
 
 from types import SimpleNamespace
@@ -318,7 +318,15 @@ class TrackingInterface(QFrame):
         self.trackingNumberLabel.setText(f"Csomagszám: {parcelTracking['tracking_number']}");
         self.packageSizeLabel.setText(f"{parcelTracking['size']} Méret");
         self.routeLabel.setText(f"{parcelTracking['sender']['city']}, feladó  →  {parcelTracking['recipient']['city']}, címzett")
-        self.deliveryDateLabel.setText(f"Várható kézbesítés: {parcelTracking['delivery_date']}")
+        # Empty until the warehouse assigns the delivery
+        if parcelTracking['delivery_date']:
+            delivery = (
+                f"{format_date(parcelTracking['delivery_date'])} "
+                f"{format_window(parcelTracking['delivery_window_start'], parcelTracking['delivery_window_end'])}"
+            )
+        else:
+            delivery = "a raktár még nem jelölte ki"
+        self.deliveryDateLabel.setText(f"Várható kézbesítés: {delivery}")
         
         self.set_tracking_status(parcelTracking['status'])
         
