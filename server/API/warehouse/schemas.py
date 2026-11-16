@@ -4,14 +4,16 @@ from pydantic import AfterValidator, Field, PositiveInt, StringConstraints, mode
 from server.API.common import ORMModel, RequestModel, PatchModel, TimeSlot
 
 
-def _unique_ids(ids: list[int]) -> list[int]:
-    if len(set(ids)) != len(ids):
-        raise ValueError("A lista ismétlődő csomagazonosítót tartalmaz")
-    return ids
+def _unique_numbers(numbers: list[str]) -> list[str]:
+    if len(set(numbers)) != len(numbers):
+        raise ValueError("A lista ismétlődő csomagszámot tartalmaz")
+    return numbers
 
 
-# Bulk operation parcel ids, one transaction
-ParcelIdList = Annotated[list[PositiveInt], Field(min_length=1, max_length=100), AfterValidator(_unique_ids)]
+# Same form as public tracking: no surrounding spaces, upper case (column length 30)
+TrackingNumber = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=30)]
+# Bulk operation tracking numbers, one transaction
+TrackingNumberList = Annotated[list[TrackingNumber], Field(min_length=1, max_length=100), AfterValidator(_unique_numbers)]
 
 
 # --- Warehouse ---------------------------------------------------
@@ -32,19 +34,19 @@ class WarehouseUpdate(PatchModel):
 
 class CheckInRequest(RequestModel):
     #Check in arrived parcels
-    parcel_ids: ParcelIdList
+    tracking_numbers: TrackingNumberList
 
 
 class PickupAssignRequest(RequestModel):
     #Assign pickup to a courier"""
     courier_id: PositiveInt
-    parcel_ids: ParcelIdList
+    tracking_numbers: TrackingNumberList
 
 
 class DeliveryAssignRequest(RequestModel):
     #Assign delivery to a courier (no date/slot: keep requested delivery time)
     courier_id: PositiveInt
-    parcel_ids: ParcelIdList
+    tracking_numbers: TrackingNumberList
     delivery_date: date | None = None
     delivery_slot: TimeSlot | None = None
 

@@ -8,23 +8,25 @@ from server.API.user.services import get_courier_or_404
 from server.API.warehouse.schemas import CheckInRequest, DeliveryAssignRequest, PickupAssignRequest, WarehouseUpdate
 
 # Bulk ops: validate every parcel first, then modify (all or nothing):
-# missing id → 404, wrong status → 409
+# unknown tracking number → 404, wrong status → 409
 
 # Physically in the warehouse (also used by stat)
 IN_WAREHOUSE_STATUSES = frozenset({ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED})
 
 
-def _load_parcels(db: Session, parcel_ids: list[int]) -> list[Parcel]:
-    # Locked rows in request order, missing id → 404
-    parcels = db.scalars(select(Parcel).where(Parcel.id.in_(parcel_ids)).with_for_update()).all()
-    by_id = {parcel.id: parcel for parcel in parcels}
-    missing = [parcel_id for parcel_id in parcel_ids if parcel_id not in by_id]
+def _load_parcels(db: Session, tracking_numbers: list[str]) -> list[Parcel]:
+    # Locked rows in request order, unknown tracking number → 404 (the schema already normalized them)
+    parcels = db.scalars(
+        select(Parcel).where(Parcel.tracking_number.in_(tracking_numbers)).with_for_update()
+    ).all()
+    by_number = {parcel.tracking_number: parcel for parcel in parcels}
+    missing = [number for number in tracking_numbers if number not in by_number]
     if missing:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            f"Nem található csomag: {', '.join(map(str, missing))}",
+            f"Nem található csomag: {', '.join(missing)}",
         )
-    return [by_id[parcel_id] for parcel_id in parcel_ids]
+    return [by_number[number] for number in tracking_numbers]
 
 
 def _require_statuses(parcels: list[Parcel], *allowed: ParcelStatus) -> None:
@@ -80,7 +82,7 @@ def list_couriers(db: Session) -> list[User]:
 
 
 def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     _require_statuses(parcels, ParcelStatus.PICKED_UP, ParcelStatus.FAILED)
 
     warehouse = get_warehouse(db)
@@ -108,7 +110,7 @@ def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
 
 def assign_pickup(db: Session, actor: User, data: PickupAssignRequest) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after pickup
     _require_statuses(parcels, ParcelStatus.BOOKED, ParcelStatus.PICKUP_ASSIGNED)
 
@@ -123,7 +125,7 @@ def assign_pickup(db: Session, actor: User, data: PickupAssignRequest) -> list[P
 
 def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
-    parcels = _load_parcels(db, data.parcel_ids)
+    parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after the courier started
     _require_statuses(parcels, ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED)
 

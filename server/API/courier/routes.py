@@ -11,21 +11,22 @@ router = APIRouter(prefix="/courier", tags=["courier"])
 def list_tasks(db: DbSession, courier: CourierUser, data: Annotated[CourierTaskParams, Query()]):
     return CourierServices.list_tasks(db, courier, data)
 
-@router.post("/parcels/{parcel_id}/pickup", response_model=ParcelRead)
-def pickup(db: DbSession, courier: CourierUser, parcel_id: int):
-    return CourierServices.pickup(db, courier, parcel_id)
+# The courier identifies the parcel by its tracking number (case and surrounding spaces do not matter)
+@router.post("/parcels/{tracking_number}/pickup", response_model=ParcelRead)
+def pickup(db: DbSession, courier: CourierUser, tracking_number: str):
+    return CourierServices.pickup(db, courier, tracking_number)
 
-@router.post("/parcels/{parcel_id}/start", response_model=ParcelRead)
-def start_delivery(db: DbSession, courier: CourierUser, parcel_id: int):
-    return CourierServices.start_delivery(db, courier, parcel_id)
+@router.post("/parcels/{tracking_number}/start", response_model=ParcelRead)
+def start_delivery(db: DbSession, courier: CourierUser, tracking_number: str):
+    return CourierServices.start_delivery(db, courier, tracking_number)
 
-@router.post("/parcels/{parcel_id}/deliver", response_model=ParcelRead)
-def deliver(db: DbSession, courier: CourierUser, parcel_id: int):
-    return CourierServices.deliver(db, courier, parcel_id)
+@router.post("/parcels/{tracking_number}/deliver", response_model=ParcelRead)
+def deliver(db: DbSession, courier: CourierUser, tracking_number: str):
+    return CourierServices.deliver(db, courier, tracking_number)
 
-@router.post("/parcels/{parcel_id}/fail", response_model=ParcelRead)
-def fail(db: DbSession, courier: CourierUser, parcel_id: int, data: CourierServices.ParcelFailRequest):
-    return CourierServices.fail(db, courier, parcel_id, data)
+@router.post("/parcels/{tracking_number}/fail", response_model=ParcelRead)
+def fail(db: DbSession, courier: CourierUser, tracking_number: str, data: CourierServices.ParcelFailRequest):
+    return CourierServices.fail(db, courier, tracking_number, data)
 
 @router.get("/history", response_model=CourierServices.CourierHistory)
 def get_history(db: DbSession, courier: CourierUser, params: Annotated[CourierServices.CourierHistoryParams, Query()]):
