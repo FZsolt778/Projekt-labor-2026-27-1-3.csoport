@@ -18,6 +18,10 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from api_client import ApiError, api, run_in_background
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..main_window import Window
 
 
 class LoginInterface(QFrame):
@@ -78,61 +82,54 @@ class LoginInterface(QFrame):
         self.loginErrorLabel.hide()
 
     def _on_login_success(self) -> None:
-        self._finish_login_request()
-        
+        self.formFrame.setEnabled(True)
+        self.loginButton.setText("Bejelentkezés")
+        self.w.initNavigation()
 
     def _on_login_error(self, error: ApiError) -> None:
-        self._finish_login_request()
         self.loginErrorLabel.setText(error.message)
         self.loginErrorLabel.show()
-
-    def _finish_login_request(self) -> None:
         self.formFrame.setEnabled(True)
         self.loginButton.setText("Bejelentkezés")
 
-        
-    def __init__(self, text: str, parent=None):
+    def __init__(self, text: str, w: "Window", parent=None):
         super().__init__(parent=parent)
 
         self.setObjectName(text.replace(" ", "-"))
+
+        self.w = w
 
         self.hBoxLayout = QHBoxLayout(self)
         self.hBoxLayout.setContentsMargins(0, 0, 0, 0)
         self.hBoxLayout.setSpacing(0)
 
-        #left form
+        # left form
         self.formFrame = QFrame(self)
         self.formLayout = QVBoxLayout(self.formFrame)
         self.formLayout.setContentsMargins(100, 40, 100, 40)
         self.formLayout.setSpacing(10)
-       
-       
-        #-------Form Title-------
+
+        # -------Form Title-------
         self.title = SubtitleLabel("Bejelentkezés", self.formFrame)
         setFont(self.title, 45, QFont.Bold)
         self.title.setAlignment(Qt.AlignCenter)
-      
-      
-        #-------Body Label-------
-        self.description = BodyLabel(
-            "Jelentkezz be a fiókodba",
-            self.formFrame
-        )
+
+        # -------Body Label-------
+        self.description = BodyLabel("Jelentkezz be a fiókodba", self.formFrame)
 
         self.description.setAlignment(Qt.AlignCenter)
-        setFont(self.description,25)
+        setFont(self.description, 25)
         self.description.setStyleSheet("color: gray;")
-        
-        #-------email-------
+
+        # -------email-------
         self.emailEdit = LineEdit(self.formFrame)
         self.emailEdit.setPlaceholderText("Mail")
         self.emailEdit.setClearButtonEnabled(True)
         self.emailEdit.setTextMargins(32, 0, 8, 0)
         self.emailEdit.setMinimumHeight(50)
-        
+
         self.emailEdit.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
 
         self.emailErrorLabel = QLabel(self.formFrame)
@@ -147,24 +144,20 @@ class LoginInterface(QFrame):
         self.emailFieldLayout.addWidget(self.emailEdit)
         self.emailFieldLayout.addWidget(self.emailErrorLabel)
 
-        self.emailIcon = QSvgWidget(
-            ":/icons/mail.svg",
-             self.emailEdit
-        )
+        self.emailIcon = QSvgWidget(":/icons/mail.svg", self.emailEdit)
         self.emailIcon.setFixedSize(18, 18)
-        self.emailIcon.move(10, (self.emailEdit.height() - self.emailIcon.height()) // 2)
+        self.emailIcon.move(
+            10, (self.emailEdit.height() - self.emailIcon.height()) // 2
+        )
 
-
-
-        #-------password-------
+        # -------password-------
         self.passwordEdit = PasswordLineEdit(self.formFrame)
         self.passwordEdit.setPlaceholderText("Jelszó")
         self.passwordEdit.setTextMargins(32, 0, 8, 0)
         self.passwordEdit.setMinimumHeight(50)
-                
+
         self.passwordEdit.setSizePolicy(
-                    QSizePolicy.Policy.Expanding,
-                    QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
 
         self.passwordErrorLabel = QLabel(self.formFrame)
@@ -179,12 +172,11 @@ class LoginInterface(QFrame):
         self.passwordFieldLayout.addWidget(self.passwordEdit)
         self.passwordFieldLayout.addWidget(self.passwordErrorLabel)
 
-        self.passwordIcon = QSvgWidget(
-                    ":/icons/lock-keyhole.svg",
-                     self.passwordEdit
-                )
+        self.passwordIcon = QSvgWidget(":/icons/lock-keyhole.svg", self.passwordEdit)
         self.passwordIcon.setFixedSize(18, 18)
-        self.passwordIcon.move(10, (self.passwordEdit.height() - self.passwordIcon.height()) // 2)
+        self.passwordIcon.move(
+            10, (self.passwordEdit.height() - self.passwordIcon.height()) // 2
+        )
 
         self.loginErrorLabel = QLabel(self.formFrame)
         self.loginErrorLabel.setStyleSheet("color: #D13438;")
@@ -192,19 +184,14 @@ class LoginInterface(QFrame):
         self.loginErrorLabel.setWordWrap(True)
         self.loginErrorLabel.hide()
 
-
-        #------Login------
-        self.loginButton = PrimaryPushButton(
-            "Bejelentkezés",
-            self.formFrame
-        )
+        # ------Login------
+        self.loginButton = PrimaryPushButton("Bejelentkezés", self.formFrame)
         self.loginButton.setMinimumHeight(50)
         setFont(self.loginButton, 16, QFont.DemiBold)
-                        
+
         self.loginButton.setSizePolicy(
-                            QSizePolicy.Policy.Expanding,
-                            QSizePolicy.Policy.Fixed
-                )
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.loginButton.clicked.connect(self.onClickLogin)
         self.emailEdit.textChanged.connect(
             lambda: self._on_login_input_changed(self.emailEdit, self.emailErrorLabel)
@@ -229,29 +216,29 @@ class LoginInterface(QFrame):
         self.formLayout.addWidget(self.loginErrorLabel)
         self.formLayout.addStretch(1)
 
-        #right illustration
+        # right illustration
         self.illustrationFrame = QFrame(self)
-        self.illustrationLayout = QVBoxLayout(
-            self.illustrationFrame
-        )
+        self.illustrationLayout = QVBoxLayout(self.illustrationFrame)
         self.illustrationLayout.setContentsMargins(30, 30, 30, 30)
 
         self.illustration = QSvgWidget(
-            ":/illustrations/auth.svg",
-             self.illustrationFrame
+            ":/illustrations/auth.svg", self.illustrationFrame
+        )
+        self.illustration.renderer().setAspectRatioMode(
+            Qt.AspectRatioMode.KeepAspectRatio
         )
 
         self.illustration.setMinimumSize(250, 250)
 
         self.illustration.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
         self.illustrationLayout.addWidget(self.illustration, Qt.AlignCenter)
 
         self.hBoxLayout.addWidget(self.formFrame, 1)
         self.hBoxLayout.addWidget(self.illustrationFrame, 1)
+
 
 def test():
     print("OK")

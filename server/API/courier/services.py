@@ -6,7 +6,7 @@ from server.models import Parcel, ParcelEvent, ParcelStatus, User
 from server.src.config import settings
 from server.API.contact.schemas import ContactRead
 from server.API.parcel.schemas import ParcelRead
-from server.API.parcel.services import add_event, get_parcel_or_404, require_status
+from server.API.parcel.services import add_event, get_by_tracking_number, require_status
 from server.API.courier.schemas import (
     CourierHistory, CourierHistoryItem, CourierHistoryParams, CourierTask, CourierTaskParams, CourierTaskType,
     ParcelFailRequest,
@@ -33,9 +33,9 @@ def _not_found() -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, "A csomag nem található")
 
 
-def _assigned_parcel(db: Session, courier: User, parcel_id: int, task: CourierTaskType) -> Parcel:
+def _assigned_parcel(db: Session, courier: User, tracking_number: str, task: CourierTaskType) -> Parcel:
     # Parcel assigned to this courier for the task, else 404
-    parcel = get_parcel_or_404(db, parcel_id)
+    parcel = get_by_tracking_number(db, tracking_number)
     assigned_id = parcel.pickup_courier_id if task is CourierTaskType.PICKUP else parcel.delivery_courier_id
     if assigned_id != courier.id:
         raise _not_found()
@@ -70,32 +70,32 @@ def list_tasks(db: Session, courier: User, params: CourierTaskParams) -> list[Co
     return [task for _, task in tasks]
 
 
-def pickup(db: Session, courier: User, parcel_id: int) -> Parcel:
-    parcel = _assigned_parcel(db, courier, parcel_id, CourierTaskType.PICKUP)
+def pickup(db: Session, courier: User, tracking_number: str) -> Parcel:
+    parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.PICKUP)
     require_status(parcel, ParcelStatus.PICKUP_ASSIGNED)
     add_event(db, parcel, ParcelStatus.PICKED_UP, actor=courier, courier_id=courier.id)
     db.commit()
     return parcel
 
 
-def start_delivery(db: Session, courier: User, parcel_id: int) -> Parcel:
-    parcel = _assigned_parcel(db, courier, parcel_id, CourierTaskType.DELIVERY)
+def start_delivery(db: Session, courier: User, tracking_number: str) -> Parcel:
+    parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.DELIVERY)
     require_status(parcel, ParcelStatus.DELIVERY_ASSIGNED)
     add_event(db, parcel, ParcelStatus.OUT_FOR_DELIVERY, actor=courier, courier_id=courier.id)
     db.commit()
     return parcel
 
 
-def deliver(db: Session, courier: User, parcel_id: int) -> Parcel:
-    parcel = _assigned_parcel(db, courier, parcel_id, CourierTaskType.DELIVERY)
+def deliver(db: Session, courier: User, tracking_number: str) -> Parcel:
+    parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.DELIVERY)
     require_status(parcel, ParcelStatus.OUT_FOR_DELIVERY)
     add_event(db, parcel, ParcelStatus.DELIVERED, actor=courier, courier_id=courier.id)
     db.commit()
     return parcel
 
 
-def fail(db: Session, courier: User, parcel_id: int, data: ParcelFailRequest) -> Parcel:
-    parcel = get_parcel_or_404(db, parcel_id)
+def fail(db: Session, courier: User, tracking_number: str, data: ParcelFailRequest) -> Parcel:
+    parcel = get_by_tracking_number(db, tracking_number)
     is_pickup_courier = parcel.pickup_courier_id == courier.id
     is_delivery_courier = parcel.delivery_courier_id == courier.id
     if not (is_pickup_courier or is_delivery_courier):

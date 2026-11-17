@@ -27,28 +27,14 @@ def _check_delivery_pair(model: BaseModel) -> None:
 # --- Requests ----------------------------------------------------
 
 class ParcelCreate(RequestModel):
-    #Book a parcel (guest or registered)
+    #Book a parcel (guest or registered). The delivery time is set by the logistician at assignment.
     size: ParcelSize
     sender: ContactCreate
     recipient: ContactCreate
     pickup_date: date
     pickup_slot: TimeSlot
-    # Requested delivery, logistician may override
-    delivery_date: date | None = None
-    delivery_slot: TimeSlot | None = None
 
     _pickup_date = field_validator("pickup_date")(_check_pickup_date)
-
-    @model_validator(mode="after")
-    def _schedule(self):
-        _check_delivery_pair(self)
-        if self.delivery_date is None:
-            return self
-        if self.delivery_date < self.pickup_date:
-            raise ValueError("A kiszállítás nem lehet korábban, mint a felvétel")
-        if self.delivery_date == self.pickup_date and self.delivery_slot.start < self.pickup_slot.end:
-            raise ValueError("Azonos napon a kiszállítási idősáv csak a felvételi idősáv után kezdődhet")
-        return self
 
 
 class ParcelUpdate(PatchModel):
