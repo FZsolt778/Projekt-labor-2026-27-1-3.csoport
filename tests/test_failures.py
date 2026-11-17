@@ -48,19 +48,21 @@ def test_failed_delivery_goes_back_to_warehouse(client, flow, parcel, courier):
 def test_failed_parcel_cannot_be_delivered(client, flow, parcel, courier):
     flow.to(parcel["id"], "in_warehouse")
     attempt(flow, parcel["id"])
-    assert client.post(f"/courier/parcels/{parcel['id']}/deliver", headers=courier.headers).status_code == 409
+    assert client.post(f"/courier/parcels/{parcel['tracking_number']}/deliver", headers=courier.headers).status_code == 409
 
 
 def test_fail_only_while_out_for_delivery(client, flow, parcel, courier):
     flow.to(parcel["id"], "delivery_assigned")
-    response = client.post(f"/courier/parcels/{parcel['id']}/fail", headers=courier.headers, json={"note": "x"})
+    response = client.post(f"/courier/parcels/{parcel['tracking_number']}/fail", headers=courier.headers,
+                           json={"note": "x"})
     assert response.status_code == 409
 
 
 def test_other_courier_cannot_record_failure(client, flow, parcel, make_actor):
     other = make_actor(UserRole.COURIER)
     flow.to(parcel["id"], "out_for_delivery")
-    response = client.post(f"/courier/parcels/{parcel['id']}/fail", headers=other.headers, json={"note": "x"})
+    response = client.post(f"/courier/parcels/{parcel['tracking_number']}/fail", headers=other.headers,
+                           json={"note": "x"})
     assert response.status_code == 404
 
 

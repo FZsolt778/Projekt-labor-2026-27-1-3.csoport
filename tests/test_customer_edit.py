@@ -8,7 +8,7 @@ from server.models import Parcel, UserRole
 
 @pytest.fixture
 def parcel(book, customer):
-    return book(customer, delivery=None)
+    return book(customer)
 
 
 @pytest.fixture
@@ -86,58 +86,18 @@ def test_cancel(client, flow, parcel, customer, courier):
     assert client.post(f"/parcels/my/{parcel['id']}/cancel", headers=customer.headers).status_code == 409
 
 
-# --- Requested delivery time --------------------------------------
+# --- Delivery time: set by the logistician, not by the customer ----
 
-def test_set_requested_delivery(edit):
+def test_customer_cannot_set_delivery_time(edit):
     response = edit({"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["delivery_date"] == day(3)
-    assert (body["delivery_window_start"], body["delivery_window_end"]) == ("10:00:00", "12:00:00")
-
-
-def test_delivery_date_without_slot_is_rejected(edit):
-    assert edit({"delivery_date": day(3)}).status_code == 422
-
-
-def test_delivery_before_pickup_is_rejected(edit):
-    response = edit({"delivery_date": day(1), "delivery_slot": "10:00-12:00"})
     assert response.status_code == 422
-    assert response.json()["detail"] == "A felvétel nem lehet a kért kiszállítás után"
+    assert "extra_forbidden" in response.text
 
 
-@pytest.mark.parametrize("slot, status", [("08:00-10:00", 422), ("10:00-12:00", 200)])
-def test_same_day_delivery_after_pickup_slot(edit, slot, status):
-    assert edit({"delivery_date": day(2), "delivery_slot": slot}).status_code == status
-
-
-def test_clear_requested_delivery(edit):
-    edit({"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
-    response = edit({"delivery_date": None, "delivery_slot": None})
+def test_pickup_cannot_move_after_a_delivery_time_set_by_admin(client, admin, parcel, edit):
+    response = client.patch(f"/parcels/{parcel['id']}", headers=admin.headers,
+                            json={"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
     assert response.status_code == 200
-    assert (response.json()["delivery_date"], response.json()["delivery_window_start"]) == (None, None)
-
-
-def test_pickup_cannot_move_after_requested_delivery(edit):
-    edit({"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
-    assert edit({"pickup_date": day(4)}).status_code == 422
-
-
-def test_move_pickup_and_delivery_together(edit):
-    edit({"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
-    response = edit({"pickup_date": day(5), "delivery_date": day(5), "delivery_slot": "12:00-14:00"})
-    assert response.status_code == 200
-    assert (response.json()["pickup_date"], response.json()["delivery_date"]) == (day(5), day(5))
-
-
-def test_other_fields_keep_requested_delivery(edit):
-    edit({"delivery_date": day(3), "delivery_slot": "10:00-12:00"})
-    response = edit({"size": "L"})
-    assert (response.json()["size"], response.json()["delivery_date"]) == ("L", day(3))
-
-
-def test_requested_delivery_is_used_at_assignment(flow, parcel, edit):
-    edit({"delivery_date": day(4), "delivery_slot": "16:00-18:00"})
-    flow.to(parcel["id"], "in_warehouse")
-    assigned = flow.delivery_assigned(parcel["id"])[0]
-    assert (assigned["delivery_date"], assigned["delivery_window_start"]) == (day(4), "16:00:00")
+    response = edit({"pickup_date": day(4)})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A felvétel nem lehet a megadott kiszállítás után"

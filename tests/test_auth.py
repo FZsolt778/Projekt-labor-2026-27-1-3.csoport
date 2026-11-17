@@ -11,12 +11,18 @@ def login(client, email: str, password: str):
     return client.post("/auth/login", data={"username": email, "password": password})
 
 
-def test_register_creates_active_customer(client):
+def test_register_creates_active_customer_and_logs_in(client):
     response = client.post("/auth/register", json=REGISTER)
     assert response.status_code == 201
-    user = response.json()
-    assert (user["role"], user["is_active"], user["email"]) == ("customer", True, "jhon@doe.com")
-    assert "password" not in user and "password_hash" not in user
+    token = response.json()
+    assert token["role"] == "customer"
+    assert "password" not in token and "password_hash" not in token
+    # The returned token works at once
+    me = client.get("/users/me", headers={"Authorization": f"Bearer {token['access_token']}"})
+    assert me.status_code == 200
+    user = me.json()
+    assert (user["id"], user["role"], user["is_active"], user["email"]) == (
+        token["user_id"], "customer", True, "jhon@doe.com")
 
 
 def test_register_cannot_choose_role(client):

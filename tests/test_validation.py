@@ -14,34 +14,28 @@ def test_valid_booking(client):
     assert (parcel["pickup_window_start"], parcel["pickup_window_end"]) == ("08:00:00", "10:00:00")
 
 
-@pytest.mark.parametrize("changes, message", [
-    ({"pickup_date": day(0)}, "legkorábban holnapra"),
-    ({"pickup_date": day(-1)}, "legkorábban holnapra"),
-    ({"delivery_date": day(1)}, "a kiszállítás nem lehet korábban"),
-    ({"delivery_date": day(2), "delivery_slot": "08:00-10:00"}, "csak a felvételi idősáv után"),
-])
-def test_booking_schedule_rules(client, changes, message):
+@pytest.mark.parametrize("changes", [{"pickup_date": day(0)}, {"pickup_date": day(-1)}])
+def test_pickup_is_tomorrow_at_the_earliest(client, changes):
     response = client.post("/parcels", json=parcel_body() | changes)
     assert response.status_code == 422
-    assert message in response.text.lower()
+    assert "legkorábban holnapra" in response.text
 
 
-def test_same_day_delivery_after_pickup_slot(client):
-    body = parcel_body() | {"delivery_date": day(2), "delivery_slot": "10:00-12:00"}
-    assert client.post("/parcels", json=body).status_code == 201
-
-
-@pytest.mark.parametrize("missing", ["delivery_date", "delivery_slot"])
-def test_delivery_date_and_slot_go_together(client, missing):
-    body = parcel_body()
-    del body[missing]
-    assert client.post("/parcels", json=body).status_code == 422
-
-
-def test_booking_without_requested_delivery(client):
-    response = client.post("/parcels", json=parcel_body(delivery=None))
+def test_booking_has_no_delivery_time(client):
+    response = client.post("/parcels", json=parcel_body())
     assert response.status_code == 201
     assert response.json()["delivery_date"] is None
+
+
+@pytest.mark.parametrize("changes", [
+    {"delivery_date": day(3), "delivery_slot": "10:00-12:00"},
+    {"delivery_date": day(3)},
+])
+def test_booking_rejects_a_delivery_time(client, changes):
+    # The logistician sets it at assignment
+    response = client.post("/parcels", json=parcel_body() | changes)
+    assert response.status_code == 422
+    assert "extra_forbidden" in response.text
 
 
 @pytest.mark.parametrize("changes", [
@@ -127,16 +121,23 @@ def test_profile_role_cannot_be_changed(client, customer):
 
 # --- Warehouse and courier requests -----------------------------
 
-@pytest.mark.parametrize("parcel_ids, message", [
+@pytest.mark.parametrize("tracking_numbers, message", [
     ([], "at least 1"),
-    ([1, 1], "ismétlődő"),
-    (list(range(1, 102)), "at most 100"),
-    ([0], "greater than 0"),
+    (["FC1", " fc1 "], "ismétlődő"),  # duplicate after normalizing
+    ([f"FC{i}" for i in range(101)], "at most 100"),
+    (["   "], "at least 1 character"),
+    (["F" * 31], "at most 30 characters"),
 ])
-def test_bulk_parcel_id_list(client, logistician, parcel_ids, message):
-    response = client.post("/warehouse/check-in", headers=logistician.headers, json={"parcel_ids": parcel_ids})
+def test_bulk_tracking_number_list(client, logistician, tracking_numbers, message):
+    response = client.post("/warehouse/check-in", headers=logistician.headers,
+                           json={"tracking_numbers": tracking_numbers})
     assert response.status_code == 422
     assert message in response.text
+
+
+def test_bulk_old_parcel_id_field_is_rejected(client, logistician):
+    response = client.post("/warehouse/check-in", headers=logistician.headers, json={"parcel_ids": [1]})
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("when", [
@@ -145,18 +146,18 @@ def test_bulk_parcel_id_list(client, logistician, parcel_ids, message):
     {"delivery_date": day(-1), "delivery_slot": "10:00-12:00"},
 ])
 def test_assign_delivery_date_rules(client, logistician, courier, when):
-    body = {"courier_id": courier.id, "parcel_ids": [1], **when}
+    body = {"courier_id": courier.id, "tracking_numbers": ["FC1"], **when}
     assert client.post("/warehouse/assign-delivery", headers=logistician.headers, json=body).status_code == 422
 
 
 @pytest.mark.parametrize("note", ["", "   ", "x" * 256])
 def test_failed_attempt_needs_a_reason(client, courier, note):
-    response = client.post("/courier/parcels/1/fail", headers=courier.headers, json={"note": note})
+    response = client.post("/courier/parcels/FCNINCSILYEN/fail", headers=courier.headers, json={"note": note})
     assert response.status_code == 422
 
 
 def test_failed_attempt_without_body(client, courier):
-    assert client.post("/courier/parcels/1/fail", headers=courier.headers).status_code == 422
+    assert client.post("/courier/parcels/FCNINCSILYEN/fail", headers=courier.headers).status_code == 422
 
 
 @pytest.mark.parametrize("params", [{"period": "year"}, {"day": "nem-datum"}])
