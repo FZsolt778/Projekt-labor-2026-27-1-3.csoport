@@ -10,6 +10,8 @@ from .customer.tracking_interface import TrackingInterface
 from .courier.management_interface import ManagementInterface
 from .courier.history_interface import DeliveryHistoryInterface
 
+from .logistician.logistician_interface import LogisticianInterface
+
 class Window(FluentWindow):
     """ Main Interface """
 
@@ -92,9 +94,7 @@ class Window(FluentWindow):
         shipHistoryInterface = ShipHistoryInterface("Ship History Interface", self)
         self.addSubInterface(shipHistoryInterface, QIcon(":/icons/rotate-ccw-clock.svg"), "Előzmények", NavigationItemPosition.TOP)
         self.subInterfaces.append(shipHistoryInterface)
-
-
-        
+  
         
     #Futár
     def initCourier(self):
@@ -111,7 +111,10 @@ class Window(FluentWindow):
         self.subInterfaces.append(deliveryHistoryInterface)
         
     def initLogistician(self):
-        print('init logistician')
+        #Logistician Interface
+        logisticianInterface = LogisticianInterface("Logistician Interface", self)
+        self.addSubInterface(logisticianInterface, QIcon(":/icons/boxes-linked.svg"), "Logisztika", NavigationItemPosition.TOP)
+        self.subInterfaces.append(logisticianInterface)
         
     def initAdmin(self):
         print('init admin')
