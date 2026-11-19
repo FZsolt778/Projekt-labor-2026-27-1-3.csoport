@@ -213,13 +213,15 @@ class LogisticianInterface(QFrame):
 
             #Raktárban
             warehouseButton.clicked.connect(
-                lambda checked=False, pid=item["id"], stat=item["status"], row=i: self.warehouseParcel(pid,stat,row)
+                lambda checked=False, tracking_number=item["tracking_number"], stat=item["status"], row=i:
+                    self.warehouseParcel(tracking_number, stat, row)
             )
             warehouseButton.setEnabled(STATUS_LABELS[item["status"]] == STATUS_LABELS["picked_up"])
 
             #Kiszállítás
             deliverButton.clicked.connect(
-                lambda checked=False, pid=item["id"], row = i: self.deliverParcel(parcel_id=pid, row=row)
+                lambda checked=False, tracking_number=item["tracking_number"], row=i:
+                    self.deliverParcel(tracking_number, row)
             )
             
             deliverButton.setEnabled(STATUS_LABELS[item["status"]] == STATUS_LABELS["in_warehouse"])
@@ -227,7 +229,8 @@ class LogisticianInterface(QFrame):
             
             #Felvétel
             pickupButton.clicked.connect(
-                lambda checked=False, pid=item["id"], stat=item["status"], row=i: self.pickupParcel(pid,stat,row)
+                lambda checked=False, tracking_number=item["tracking_number"], stat=item["status"], row=i:
+                    self.pickupParcel(tracking_number, stat, row)
             )
             pickupButton.setEnabled(STATUS_LABELS[item["status"]] == STATUS_LABELS["booked"])
 
@@ -249,14 +252,14 @@ class LogisticianInterface(QFrame):
         print(error)
             
             
-    def warehouseParcel(self, parcel_id, parcel_status, row):
+    def warehouseParcel(self, tracking_number: str, parcel_status: str, row: int):
         if STATUS_LABELS[parcel_status] is not STATUS_LABELS["picked_up"]:
             return;
         run_in_background(
             api.post,
             "/warehouse/check-in",
             json={
-                "parcel_ids": [parcel_id]
+                "tracking_numbers": [tracking_number]
             },
             on_success=lambda result: self._on_check_in_success(result, row),
             on_error=self._on_check_in_success_error,
@@ -267,14 +270,14 @@ class LogisticianInterface(QFrame):
         self.table.cellWidget(row, 16).findChild(PushButton, "warehouse").setEnabled(False)
         self.table.cellWidget(row, 16).findChild(PushButton, "deliver").setEnabled(True)
         
-    def _on_check_in_success_error(self) -> None:
-        2    
+    def _on_check_in_success_error(self, error: ApiError) -> None:
+        print(error)
     
     
 
 
 
-    def deliverParcel(self, parcel_id, row : int):
+    def deliverParcel(self, tracking_number: str, row: int):
         courier_id : int = showCourierAssignModal(self.window());
         if courier_id == -1:
             return
@@ -284,7 +287,7 @@ class LogisticianInterface(QFrame):
             "/warehouse/assign-delivery",
             json={
                 "courier_id" : courier_id,
-                "parcel_ids": [parcel_id]
+                "tracking_numbers": [tracking_number]
             },
             on_success=lambda result: self._on_assign_delivery_success(result, row),
             on_error=self._on_assign_delivery_error
@@ -294,15 +297,15 @@ class LogisticianInterface(QFrame):
         self._update_parcel_row(result[0], row)
         self.table.cellWidget(row, 16).findChild(PushButton, "deliver").setEnabled(False)
         
-    def _on_assign_delivery_error(error) -> None:
-        2
+    def _on_assign_delivery_error(self, error: ApiError) -> None:
+        print(error)
 
     
             
             
             
             
-    def pickupParcel(self, parcel_id : int, status : str, row :int):
+    def pickupParcel(self, tracking_number: str, status: str, row: int):
         if STATUS_LABELS[status] is not STATUS_LABELS["booked"]:
             return
         
@@ -315,7 +318,7 @@ class LogisticianInterface(QFrame):
             "/warehouse/assign-pickup",
             json={
                 "courier_id" : courier_id,
-                "parcel_ids": [parcel_id]
+                "tracking_numbers": [tracking_number]
                 },
             on_success=lambda result: self._on_assign_pickup_success(result, row),
             on_error=self._on_assign_pickup_error
@@ -325,8 +328,8 @@ class LogisticianInterface(QFrame):
             self._update_parcel_row(result[0], row)
             self.table.cellWidget(row, 16).findChild(PushButton, "pickup").setEnabled(False)
                 
-    def _on_assign_pickup_error(error) -> None:
-            2
+    def _on_assign_pickup_error(self, error: ApiError) -> None:
+        print(error)
         
         
         
