@@ -1,7 +1,13 @@
+from pathlib import Path
+
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
-from api_client import api, ROLE
+from api_client import api, ROLE, ROLE_LABELS, run_in_background
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import NavigationItemPosition, FluentWindow
+from qfluentwidgets import (
+    Flyout, FlyoutAnimationType, InfoBar, InfoBarPosition, NavigationAvatarWidget, NavigationItemPosition,
+    FluentWindow,
+)
 from .admin.parcels_interface import ParcelsInterface
 from .admin.statistics_interface import StatisticsInterface
 from .admin.users_interface import UsersInterface
@@ -16,6 +22,9 @@ from .courier.management_interface import ManagementInterface
 from .courier.history_interface import DeliveryHistoryInterface
 
 from .logistician.logistician_interface import LogisticianInterface
+APP_TITLE = "Csomagkezelő"
+APP_ICON = Path(__file__).resolve().parents[1] / "resources" / "truck-icon.png"
+
 
 class Window(FluentWindow):
     """ Main Interface """
@@ -23,15 +32,25 @@ class Window(FluentWindow):
     def __init__(self):
         super().__init__()
         self.subInterfaces = []
-        
+        self.authInterface = None
+        self.account: dict | None = None
+        self.sessionRole: str | None = None
+        self.sessionTimer = QTimer(self)
+        self.sessionTimer.setInterval(5000)
+        self.sessionTimer.timeout.connect(self._check_session)
+        self.expiredNotice = None
+        api.events.session_expired.connect(self._on_session_expired)
+
         #self.shipmentsInterface = ShipmentsInterface("Shipments Interface", self)
         #self.historyInterface = HistoryInterface("History Interface", self)
 
-        self.initNavigation()
         self.initWindow()
+        self.initNavigation()
 
     def initNavigation(self):
         self.navigationInterface.removeWidget("logout")
+        self.navigationInterface.removeWidget("account")
+        self.authInterface = None
         #clear sub-interfaces before
         self.removeInterfaces()
         if api.role == ROLE.QUEST.value:
@@ -46,6 +65,13 @@ class Window(FluentWindow):
             self.initAdmin()
             
         if api.is_logged_in:
+            self.navigationInterface.addWidget(
+                routeKey="account",
+                widget=NavigationAvatarWidget(self._account_text()),
+                onClick=self._show_account,
+                position=NavigationItemPosition.BOTTOM,
+                tooltip="Bejelentkezett felhasználó",
+            )
             logout_item = self.navigationInterface.addItem(
                 routeKey="logout",
                 icon=QIcon(":/icons/log-out.svg"),
@@ -56,7 +82,19 @@ class Window(FluentWindow):
                 tooltip="Kijelentkezés",
             )
             logout_item.setTextColor("#ff0000", "#ff0000")
-            
+
+        fresh_login = api.is_logged_in and self.sessionRole is None
+        self.sessionRole = api.role if api.is_logged_in else None
+        if api.is_logged_in:
+            self.sessionTimer.start()
+            if fresh_login:
+                self._close_expired_notice()
+                self._load_account()
+        else:
+            self.sessionTimer.stop()
+            self.account = None
+            self.setWindowTitle(APP_TITLE)
+
     #Vendég
     def initQuest(self):
         print('init quest')
@@ -75,6 +113,7 @@ class Window(FluentWindow):
         authInterface = AuthInterface(self)
         self.addSubInterface(authInterface,  QIcon(":/icons/auth.svg"), 'Bejelentkezés', NavigationItemPosition.BOTTOM)
         self.subInterfaces.append(authInterface)
+        self.authInterface = authInterface
  
     #Ügyfél
     def initCustomer(self):
@@ -152,8 +191,8 @@ class Window(FluentWindow):
         
     def initWindow(self):
         #self.resize(900, 700)
-        self.setWindowIcon(QIcon('C:/Users/User/Projekt-labor-2026-27-1/frontend/resources/truck-icon.png'))
-        self.setWindowTitle('Csomagkezelő')
+        self.setWindowIcon(QIcon(str(APP_ICON)))
+        self.setWindowTitle(APP_TITLE)
     
     def removeInterfaces(self):
         if self.subInterfaces:
@@ -162,10 +201,94 @@ class Window(FluentWindow):
             )
 
         for interface in reversed(self.subInterfaces):
-            self.removeInterface(interface)
+            self.removeInterface(interface, isDelete=True)
+            interface.setObjectName(f"{interface.objectName()}-removed")
             
         self.subInterfaces.clear()
         
     def logout(self):
         api.logout();
         self.initNavigation();
+        self._notify(InfoBar.info, "Kijelentkeztél", "Sikeresen kijelentkeztél.", 3000)
+
+    # --- Session ---
+
+    def _role_title(self) -> str:
+        return ROLE_LABELS.get(api.role, {}).get("title", "")
+
+    def _account_text(self) -> str:
+        if self.account is None:
+            return self._role_title()
+        return f"{self.account['last_name']} {self.account['first_name']} ({self._role_title()})"
+
+    def _account_item(self) -> NavigationAvatarWidget | None:
+        item = self.navigationInterface.panel.items.get("account")
+        return item.widget if item is not None else None
+
+    def _load_account(self):
+        user_id = api.user_id
+        run_in_background(
+            api.get, "/users/me",
+            on_success=lambda user: self._on_account_loaded(user_id, user),
+            on_error=lambda error: self._welcome(user_id),
+        )
+
+    def _on_account_loaded(self, user_id: int, user: dict):
+        if api.user_id != user_id:
+            return
+        self.account = user
+        account_item = self._account_item()
+        if account_item is not None:
+            account_item.setName(self._account_text())
+        self.setWindowTitle(f"{APP_TITLE} – {self._account_text()}")
+        self._welcome(user_id)
+
+    def _welcome(self, user_id: int):
+        if api.user_id != user_id:
+            return
+        name = f"{self.account['last_name']} {self.account['first_name']}" if self.account else None
+        greeting = f"Üdv, {name}! " if name else ""
+        self._notify(InfoBar.success, "Sikeres bejelentkezés", f"{greeting}Szerepkör: {self._role_title()}", 4000)
+
+    def _show_account(self):
+        lines = []
+        if self.account is not None:
+            lines.append(self.account["email"])
+        lines.append(f"Szerepkör: {self._role_title()}")
+        if api.expires_at is not None:
+            lines.append(f"A munkamenet lejár: {api.expires_at.astimezone():%H:%M}")
+        Flyout.create(
+            title=self._account_text() if self.account else "Bejelentkezve",
+            content="\n".join(lines),
+            target=self._account_item(),
+            parent=self,
+            isClosable=True,
+            aniType=FlyoutAnimationType.PULL_UP,
+        )
+
+    def _check_session(self):
+        seconds_left = api.session_seconds_left
+        if seconds_left is not None and seconds_left <= 0:
+            self._on_session_expired()
+
+    def _on_session_expired(self):
+        if self.sessionRole is None:
+            return
+        api.logout()
+        self.initNavigation()
+        if self.authInterface is not None:
+            self.switchTo(self.authInterface)
+        self.expiredNotice = self._notify(InfoBar.warning, "Lejárt a munkamenet",
+                                          "Biztonsági okból kijelentkeztettünk. Jelentkezz be újra a folytatáshoz.", -1)
+
+    def _close_expired_notice(self):
+        notice, self.expiredNotice = self.expiredNotice, None
+        if notice is not None:
+            try:
+                notice.close()
+            except RuntimeError:
+                pass  # already closed by the user
+
+    def _notify(self, show, title: str, content: str, duration: int):
+        return show(title=title, content=content, isClosable=True, position=InfoBarPosition.TOP_RIGHT,
+                    duration=duration, parent=self)

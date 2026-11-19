@@ -13,6 +13,9 @@ from api_client import api
 w: Window | None = None
 
 if __name__ == '__main__':
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Csomagkezelo.Kliens")
     app = QApplication(sys.argv)
 
     setup_fluent_theme()
