@@ -20,6 +20,7 @@ from .customer.tracking_interface import TrackingInterface
 
 from .courier.management_interface import ManagementInterface
 from .courier.history_interface import DeliveryHistoryInterface
+from .logistician.assignments_interface import LogisticianInterface
 
 APP_TITLE = "Csomagkezelő"
 APP_ICON = Path(__file__).resolve().parents[1] / "resources" / "truck-icon.png"
@@ -156,30 +157,32 @@ class Window(FluentWindow):
         self.subInterfaces.append(deliveryHistoryInterface)
         
     def initLogistician(self):
-        print('init logistician')
+        logisticianInterface = LogisticianInterface("Logistician Interface", self)
+        self.addSubInterface(logisticianInterface, QIcon(":/icons/boxes-linked.svg"), "Logisztika", NavigationItemPosition.TOP)
+        self.subInterfaces.append(logisticianInterface)
         
+                
     #Admin
     def initAdmin(self):
-        print('init admin')
         
         #Users Interface
         usersInterface = UsersInterface("Admin Users", self)
-        self.addSubInterface(usersInterface, FIF.PEOPLE, "Felhasználók", NavigationItemPosition.TOP)
+        self.addSubInterface(usersInterface,  QIcon(":/icons/users-round.svg"), "Felhasználók", NavigationItemPosition.TOP)
         self.subInterfaces.append(usersInterface)
         
         #Parcels Interface
         parcelsInterface = ParcelsInterface("Admin Parcels", self)
-        self.addSubInterface(parcelsInterface, FIF.DOCUMENT, "Csomagok", NavigationItemPosition.TOP)
+        self.addSubInterface(parcelsInterface, QIcon(":/icons/package.svg"), "Csomagok", NavigationItemPosition.TOP)
         self.subInterfaces.append(parcelsInterface)
         
         #Statistics Interface
         statisticsInterface = StatisticsInterface("Admin Statistics", self)
-        self.addSubInterface(statisticsInterface, FIF.PIE_SINGLE, "Statisztikák", NavigationItemPosition.TOP)
+        self.addSubInterface(statisticsInterface, QIcon(":/icons/stat.svg"), "Statisztikák", NavigationItemPosition.TOP)
         self.subInterfaces.append(statisticsInterface)
         
         #Warehouse Interface
         warehouseInterface = WarehouseSettingsInterface("Admin Warehouse", self)
-        self.addSubInterface(warehouseInterface, FIF.HOME, "Raktár", NavigationItemPosition.TOP)
+        self.addSubInterface(warehouseInterface, QIcon(":/icons/warehouse.svg"), "Raktár", NavigationItemPosition.TOP)
         self.subInterfaces.append(warehouseInterface)
         
         #Trackin Interface
