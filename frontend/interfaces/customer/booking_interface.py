@@ -6,7 +6,11 @@ from qfluentwidgets import (
     BodyLabel,
     LineEdit,
     ComboBox,
+    PushButton,
     PrimaryPushButton,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
     setFont,
 )
 
@@ -14,6 +18,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QGridLayout,
     QSizePolicy,
     QScrollArea,
@@ -88,8 +93,14 @@ class BookingInterface(QFrame):
         self.peopleLayout.setHorizontalSpacing(24)
         self.peopleLayout.setVerticalSpacing(12)
 
+        # Only a logged in user has saved data to fill in
+        self.ownDataButton = PushButton(FluentIcon.PEOPLE, "Saját adataim", self.formContent)
+        self.ownDataButton.setToolTip("A fiókodban megadott adatok beírása a feladó mezőibe")
+        self.ownDataButton.clicked.connect(self.onClickOwnData)
+        self.ownDataButton.setVisible(api.token is not None)
+
         self.senderFrame, self.sender, sender_errors = self.create_person_section(
-            "Feladó adatai"
+            "Feladó adatai", self.ownDataButton
         )
 
         self.recipientFrame, self.recipient, recipient_errors = self.create_person_section(
@@ -240,7 +251,7 @@ class BookingInterface(QFrame):
 
         return edit
 
-    def create_person_section(self, title: str):
+    def create_person_section(self, title: str, action: QWidget | None = None):
         """Feladó vagy címzett adatainak létrehozása."""
 
         frame = QFrame(self.formContent)
@@ -251,7 +262,13 @@ class BookingInterface(QFrame):
 
         sectionTitle = SubtitleLabel(title, frame)
         setFont(sectionTitle, 18, QFont.Weight.DemiBold)
-        layout.addWidget(sectionTitle)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(sectionTitle)
+        header.addStretch(1)
+        if action is not None:
+            header.addWidget(action)
+        layout.addLayout(header)
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
@@ -383,6 +400,38 @@ class BookingInterface(QFrame):
             is_valid = False
 
         return is_valid
+
+    def onClickOwnData(self) -> None:
+        self.ownDataButton.setEnabled(False)
+        run_in_background(
+            api.get,
+            "/users/me",
+            on_success=self._on_own_data_loaded,
+            on_error=self._on_own_data_error,
+        )
+
+    def _on_own_data_loaded(self, user: dict) -> None:
+        self.ownDataButton.setEnabled(True)
+        # Fields missing from the profile keep what the user typed
+        for key, field in self.sender.items():
+            value = user.get(key)
+            if value:
+                field.setText(value)
+        if not user.get("postal_code"):
+            self._notify(
+                InfoBar.warning, "Hiányzó cím",
+                "A fiókodban nincs megadva cím, a feladó címét töltsd ki kézzel.",
+            )
+        else:
+            self._notify(InfoBar.success, "Kitöltve", "A feladó adatait a fiókod adataival töltöttük ki.")
+
+    def _on_own_data_error(self, error: ApiError) -> None:
+        self.ownDataButton.setEnabled(True)
+        self._notify(InfoBar.error, "Nem sikerült betölteni az adataidat", error.message)
+
+    def _notify(self, show, title: str, content: str) -> None:
+        show(title=title, content=content, orient=Qt.Orientation.Horizontal, isClosable=True,
+             position=InfoBarPosition.TOP_RIGHT, duration=4000, parent=self)
 
     def onClickBooking(self) -> None:
         if not self._validate_booking():
