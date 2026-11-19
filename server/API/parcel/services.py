@@ -1,12 +1,19 @@
 import secrets
 from datetime import date
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased, selectinload
 from server.models import Contact, Parcel, ParcelEvent, ParcelStatus, User
 from server.API.common import TimeSlot, paginate
 from server.API.contact.schemas import ContactCreate
 from server.API.user.services import get_active_user_by_email, get_courier_or_404
+from server.email.notifications import (
+    notify_delivery_assigned,
+    notify_parcel_booked,
+    notify_parcel_cancelled,
+    notify_parcel_schedule_updated,
+    notify_pickup_assigned,
+)
 from server.API.parcel.schemas import (
     AdminParcelUpdate, MyParcelsParams, ParcelCourierUpdate, ParcelCreate, ParcelDirection, ParcelListParams,
     ParcelScope, ParcelUpdate,
@@ -143,7 +150,12 @@ def _get_editable_parcel(db: Session, user: User, parcel_id: int) -> Parcel:
 
 # --- Public / customer -------------------------------------------
 
-def create_parcel(db: Session, data: ParcelCreate, user: User | None) -> Parcel:
+def create_parcel(
+    db: Session,
+    data: ParcelCreate,
+    user: User | None,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     recipient_user = get_active_user_by_email(db, data.recipient.email)
     pickup_start, pickup_end = _slot_window(data.pickup_slot)
     # No delivery time yet, the logistician sets it at assignment
@@ -159,6 +171,7 @@ def create_parcel(db: Session, data: ParcelCreate, user: User | None) -> Parcel:
     db.add(parcel)
     add_event(db, parcel, ParcelStatus.BOOKED, actor=user)
     db.commit()
+    notify_parcel_booked(background_tasks, parcel)
     return parcel
 
 
@@ -192,10 +205,19 @@ def get_my_parcel(db: Session, user: User, parcel_id: int) -> Parcel:
     return _get_own_parcel(db, user, parcel_id)
 
 
-def update_my_parcel(db: Session, user: User, parcel_id: int, data: ParcelUpdate) -> Parcel:
+def update_my_parcel(
+    db: Session,
+    user: User,
+    parcel_id: int,
+    data: ParcelUpdate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = _get_editable_parcel(db, user, parcel_id)
 
     old_pickup = (parcel.pickup_date, parcel.pickup_window_start, parcel.pickup_window_end)
+    old_recipient_addr = (
+        parcel.recipient.postal_code, parcel.recipient.city, parcel.recipient.street, parcel.recipient.house_number
+    )
     new_date = data.pickup_date or parcel.pickup_date
     new_start, new_end = (
         _slot_window(data.pickup_slot) if data.pickup_slot is not None
@@ -224,13 +246,25 @@ def update_my_parcel(db: Session, user: User, parcel_id: int, data: ParcelUpdate
         parcel.pickup_courier_id = None
         add_event(db, parcel, ParcelStatus.BOOKED, actor=user, note="Felvételi időpont módosítva")
     db.commit()
+    new_pickup = (parcel.pickup_date, parcel.pickup_window_start, parcel.pickup_window_end)
+    new_recipient_addr = (
+        parcel.recipient.postal_code, parcel.recipient.city, parcel.recipient.street, parcel.recipient.house_number
+    )
+    if new_pickup != old_pickup or new_recipient_addr != old_recipient_addr:
+        notify_parcel_schedule_updated(background_tasks, parcel, notify_sender=True, notify_recipient=True)
     return parcel
 
 
-def cancel_my_parcel(db: Session, user: User, parcel_id: int) -> Parcel:
+def cancel_my_parcel(
+    db: Session,
+    user: User,
+    parcel_id: int,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = _get_editable_parcel(db, user, parcel_id)
     add_event(db, parcel, ParcelStatus.CANCELLED, actor=user)
     db.commit()
+    notify_parcel_cancelled(background_tasks, parcel)
     return parcel
 
 
@@ -264,9 +298,17 @@ def list_parcels(db: Session, params: ParcelListParams) -> dict:
     return paginate(db, stmt.order_by(Parcel.created_at.desc(), Parcel.id.desc()), params)
 
 
-def admin_update_parcel(db: Session, admin: User, parcel_id: int, data: AdminParcelUpdate) -> Parcel:
+def admin_update_parcel(
+    db: Session,
+    admin: User,
+    parcel_id: int,
+    data: AdminParcelUpdate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     # Any time, status unchanged, no event
     parcel = get_parcel_or_404(db, parcel_id)
+    old_pickup = (parcel.pickup_date, parcel.pickup_window_start, parcel.pickup_window_end)
+    old_delivery = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end)
     fields = data.model_fields_set
 
     new_pickup_date = data.pickup_date or parcel.pickup_date
@@ -297,6 +339,12 @@ def admin_update_parcel(db: Session, admin: User, parcel_id: int, data: AdminPar
             recipient_user = get_active_user_by_email(db, recipient_changes["email"])
             parcel.recipient.user_id = recipient_user.id if recipient_user is not None else None
     db.commit()
+    pickup_changed = (parcel.pickup_date, parcel.pickup_window_start, parcel.pickup_window_end) != old_pickup
+    delivery_changed = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end) != old_delivery
+    if pickup_changed or delivery_changed:
+        notify_parcel_schedule_updated(
+            background_tasks, parcel, notify_sender=True, notify_recipient=delivery_changed
+        )
     return parcel
 
 
@@ -342,25 +390,43 @@ def _set_delivery_courier(db: Session, admin: User, parcel: Parcel, courier_id: 
     add_event(db, parcel, new_status, actor=admin, courier_id=courier.id, note=ADMIN_COURIER_NOTE)
 
 
-def admin_set_couriers(db: Session, admin: User, parcel_id: int, data: ParcelCourierUpdate) -> Parcel:
+def admin_set_couriers(
+    db: Session,
+    admin: User,
+    parcel_id: int,
+    data: ParcelCourierUpdate,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     # Any time (the logistician lock does not apply here), but not on closed parcels
     parcel = get_parcel_or_404(db, parcel_id)
     if parcel.status in FINAL_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "Lezárt csomag futárai nem módosíthatók")
+    old_status = ParcelStatus(parcel.status)
     if "pickup_courier_id" in data.model_fields_set:
         _set_pickup_courier(db, admin, parcel, data.pickup_courier_id)
     if "delivery_courier_id" in data.model_fields_set:
         _set_delivery_courier(db, admin, parcel, data.delivery_courier_id)
     db.commit()
+    new_status = ParcelStatus(parcel.status)
+    if old_status is ParcelStatus.BOOKED and new_status is ParcelStatus.PICKUP_ASSIGNED:
+        notify_pickup_assigned(background_tasks, parcel)
+    elif old_status is ParcelStatus.IN_WAREHOUSE and new_status is ParcelStatus.DELIVERY_ASSIGNED:
+        notify_delivery_assigned(background_tasks, parcel)
     return parcel
 
 
-def admin_cancel_parcel(db: Session, admin: User, parcel_id: int) -> Parcel:
+def admin_cancel_parcel(
+    db: Session,
+    admin: User,
+    parcel_id: int,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = get_parcel_or_404(db, parcel_id)
     if parcel.status in FINAL_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "A csomag már lezárult")
     add_event(db, parcel, ParcelStatus.CANCELLED, actor=admin)
     db.commit()
+    notify_parcel_cancelled(background_tasks, parcel)
     return parcel
 
 

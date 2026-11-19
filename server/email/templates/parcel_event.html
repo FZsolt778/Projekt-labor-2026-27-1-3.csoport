@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+  <p style="margin:0 0 12px;font-size:15px;">Kedves {{ recipient_name }}!</p>
+  <p style="margin:0 0 18px;font-size:15px;line-height:1.5;">{{ lead }}</p>
+
+  <div style="background-color:#f3f6fa;border-left:4px solid #0f4c81;padding:12px 16px;margin-bottom:18px;">
+    <div style="font-size:12px;color:#4b5563;text-transform:uppercase;">Csomagazonosító</div>
+    <div style="font-size:18px;font-weight:bold;color:#0f4c81;letter-spacing:1px;">{{ tracking_number }}</div>
+  </div>
+
+  {% if details %}
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:16px;">
+    {% for label, value in details %}
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;width:42%;vertical-align:top;">{{ label }}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;font-weight:600;vertical-align:top;">{{ value }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if footer_note %}
+  <p style="margin:12px 0 0;font-size:13px;color:#4b5563;line-height:1.5;">{{ footer_note }}</p>
+  {% endif %}
+{% endblock %}

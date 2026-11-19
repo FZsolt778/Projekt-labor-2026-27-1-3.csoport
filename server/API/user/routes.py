@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
 from server.API.common import Page
 from server.API.deps import DbSession, CurrentUser, AdminUser
 from server.API.user import services
@@ -16,8 +16,8 @@ def get_me(user: CurrentUser):
 
 
 @router.patch("/me", response_model=UserRead)
-def update_me(data: UserUpdateMe, db: DbSession, user: CurrentUser):
-    return services.update_me(db, user, data)
+def update_me(data: UserUpdateMe, db: DbSession, user: CurrentUser, background_tasks: BackgroundTasks):
+    return services.update_me(db, user, data, background_tasks)
 
 
 # --- Admin -------------------------------------------------------

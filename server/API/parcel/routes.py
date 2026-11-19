@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
 from server.API.common import Page
 from server.API.deps import DbSession, OptionalUser, CustomerUser, AdminUser, StaffUser
 from server.API.parcel import services
@@ -16,8 +16,8 @@ router = APIRouter(prefix="/parcels", tags=["parcels"])
 # --- Public ------------------------------------------------------
 
 @router.post("", response_model=ParcelRead, status_code=status.HTTP_201_CREATED)
-def create_parcel(data: ParcelCreate, db: DbSession, user: OptionalUser):
-    return services.create_parcel(db, data, user)
+def create_parcel(data: ParcelCreate, db: DbSession, user: OptionalUser, background_tasks: BackgroundTasks):
+    return services.create_parcel(db, data, user, background_tasks)
 
 
 @router.get("/track/{tracking_number}", response_model=ParcelTracking)
@@ -38,13 +38,15 @@ def get_my_parcel(parcel_id: int, db: DbSession, user: CustomerUser):
 
 
 @router.patch("/my/{parcel_id}", response_model=ParcelRead)
-def update_my_parcel(parcel_id: int, data: ParcelUpdate, db: DbSession, user: CustomerUser):
-    return services.update_my_parcel(db, user, parcel_id, data)
+def update_my_parcel(
+    parcel_id: int, data: ParcelUpdate, db: DbSession, user: CustomerUser, background_tasks: BackgroundTasks
+):
+    return services.update_my_parcel(db, user, parcel_id, data, background_tasks)
 
 
 @router.post("/my/{parcel_id}/cancel", response_model=ParcelRead)
-def cancel_my_parcel(parcel_id: int, db: DbSession, user: CustomerUser):
-    return services.cancel_my_parcel(db, user, parcel_id)
+def cancel_my_parcel(parcel_id: int, db: DbSession, user: CustomerUser, background_tasks: BackgroundTasks):
+    return services.cancel_my_parcel(db, user, parcel_id, background_tasks)
 
 
 # --- Admin / logistician -----------------------------------------
@@ -60,18 +62,22 @@ def get_parcel(parcel_id: int, db: DbSession, staff: StaffUser):
 
 
 @router.patch("/{parcel_id}", response_model=ParcelAdminRead)
-def update_parcel(parcel_id: int, data: AdminParcelUpdate, db: DbSession, admin: AdminUser):
-    return services.admin_update_parcel(db, admin, parcel_id, data)
+def update_parcel(
+    parcel_id: int, data: AdminParcelUpdate, db: DbSession, admin: AdminUser, background_tasks: BackgroundTasks
+):
+    return services.admin_update_parcel(db, admin, parcel_id, data, background_tasks)
 
 
 @router.patch("/{parcel_id}/couriers", response_model=ParcelAdminRead)
-def set_couriers(parcel_id: int, data: ParcelCourierUpdate, db: DbSession, admin: AdminUser):
-    return services.admin_set_couriers(db, admin, parcel_id, data)
+def set_couriers(
+    parcel_id: int, data: ParcelCourierUpdate, db: DbSession, admin: AdminUser, background_tasks: BackgroundTasks
+):
+    return services.admin_set_couriers(db, admin, parcel_id, data, background_tasks)
 
 
 @router.post("/{parcel_id}/cancel", response_model=ParcelAdminRead)
-def cancel_parcel(parcel_id: int, db: DbSession, admin: AdminUser):
-    return services.admin_cancel_parcel(db, admin, parcel_id)
+def cancel_parcel(parcel_id: int, db: DbSession, admin: AdminUser, background_tasks: BackgroundTasks):
+    return services.admin_cancel_parcel(db, admin, parcel_id, background_tasks)
 
 
 @router.delete("/{parcel_id}", status_code=status.HTTP_204_NO_CONTENT)

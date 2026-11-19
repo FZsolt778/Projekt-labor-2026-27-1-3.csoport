@@ -28,5 +28,17 @@ class ENV_CONFIG(BaseSettings):
     ADMIN_EMAIL: str | None = None
     ADMIN_PASSWORD: SecretStr | None = None
 
+    # --- SMTP ------------------------------------------------------
+    SMTP_ENABLED: bool = False
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 1025
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: SecretStr = SecretStr("")
+    SMTP_FROM: str = "noreply@projektlabor.hu"
+    SMTP_FROM_NAME: str = "ProjektLabor Futárszolgálat"
+    SMTP_STARTTLS: bool = False
+    SMTP_SSL_TLS: bool = False
+    SMTP_USE_CREDENTIALS: bool = False
+
 
 settings = ENV_CONFIG()
