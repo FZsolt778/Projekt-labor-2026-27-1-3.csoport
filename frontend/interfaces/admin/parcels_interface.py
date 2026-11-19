@@ -179,7 +179,7 @@ class ParcelsInterface(AdminPage):
         self.pickupDate = self._date_edit(parcelTab)
         self.pickupSlot = ComboBox(parcelTab)
         self.pickupSlot.addItems(TIME_SLOTS)
-        self.deliveryCheck = CheckBox("Van kiszállítási időpont", parcelTab)
+        self.deliveryCheck = CheckBox("Kiszállítási időpont megadása", parcelTab)
         self.deliveryDate = self._date_edit(parcelTab)
         self.deliverySlot = ComboBox(parcelTab)
         self.deliverySlot.addItems(TIME_SLOTS)
@@ -191,6 +191,15 @@ class ParcelsInterface(AdminPage):
         form.addRow("", self.deliveryCheck)
         form.addRow("Kiszállítás napja", self.deliveryDate)
         form.addRow("Kiszállítási idősáv", self.deliverySlot)
+        self.deliveryHint = QLabel(
+            "A nap és az idősáv csak együtt menthető. Raktárban lévő csomaghoz kiszállító futár csak megadott "
+            "időponttal rendelhető. Ha kiveszed a pipát, mentéskor az időpont törlődik, de csak addig, amíg nincs "
+            "kiszállító futár a csomagon.",
+            parcelTab,
+        )
+        self.deliveryHint.setWordWrap(True)
+        self.deliveryHint.setStyleSheet(MUTED_STYLE)
+        form.addRow("", self.deliveryHint)
         self.dataTabs.addTab(parcelTab, "Csomag")
 
         self.contactFields: dict[str, dict[str, LineEdit]] = {}
