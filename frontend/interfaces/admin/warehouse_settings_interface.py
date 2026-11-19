@@ -23,8 +23,8 @@ class WarehouseSettingsInterface(AdminPage):
         super().__init__(
             text.replace(" ", "-"),
             "Raktár",
-            "A raktár neve és kapacitása. A kapacitás nem lehet kisebb, mint a raktárban jelenleg lévő "
-            "csomagok száma, a beérkeztetés pedig ennél többet nem enged be.",
+            ""
+            "",
             parent,
         )
         self.warehouse: dict | None = None
