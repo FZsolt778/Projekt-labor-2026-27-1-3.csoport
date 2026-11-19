@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from server.API.warehouse import services
 from server.API.parcel.schemas import ParcelAdminRead
 from server.API.deps import AdminUser, DbSession, StaffUser
@@ -21,13 +21,13 @@ def list_couriers(db: DbSession, staff: StaffUser):
     return services.list_couriers(db)
 
 @router.post("/check-in", response_model=list[ParcelAdminRead])
-def check_in(data: CheckInRequest, db: DbSession, staff: StaffUser):
-    return services.check_in(db, staff, data)
+def check_in(data: CheckInRequest, db: DbSession, staff: StaffUser, background_tasks: BackgroundTasks):
+    return services.check_in(db, staff, data, background_tasks)
 
 @router.post("/assign-pickup", response_model=list[ParcelAdminRead])
-def assign_pickup(data: PickupAssignRequest, db: DbSession, staff: StaffUser):
-    return services.assign_pickup(db, staff, data)
+def assign_pickup(data: PickupAssignRequest, db: DbSession, staff: StaffUser, background_tasks: BackgroundTasks):
+    return services.assign_pickup(db, staff, data, background_tasks)
 
 @router.post("/assign-delivery", response_model=list[ParcelAdminRead])
-def assign_delivery(data: DeliveryAssignRequest, db: DbSession, staff: StaffUser):
-    return services.assign_delivery(db, staff, data)
+def assign_delivery(data: DeliveryAssignRequest, db: DbSession, staff: StaffUser, background_tasks: BackgroundTasks):
+    return services.assign_delivery(db, staff, data, background_tasks)

@@ -1,15 +1,20 @@
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
 from server.models import User, UserRole
 from server.API.auth.schemas import PasswordChangeRequest, RegisterRequest, TokenResponse
 from server.API.user.services import get_active_user_by_email
+from server.email.notifications import notify_password_changed, notify_registered
 
 from server.src.config import settings
 from server.src.sec import hash_pass, verify_pass, create_access_token
 
 
-def register(db: Session, data: RegisterRequest) -> TokenResponse:
+def register(
+    db: Session,
+    data: RegisterRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> TokenResponse:
     if get_active_user_by_email(db, data.email) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -26,6 +31,7 @@ def register(db: Session, data: RegisterRequest) -> TokenResponse:
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    notify_registered(background_tasks, new_user)
     access_token = create_access_token(new_user.id, new_user.role)
     return TokenResponse(
             access_token=access_token,
@@ -53,7 +59,12 @@ def login(db: Session, email: str, password: str) -> TokenResponse:
     )
 
 
-def change_password(db: Session, user: User, data: PasswordChangeRequest) -> None:
+def change_password(
+    db: Session,
+    user: User,
+    data: PasswordChangeRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> None:
     if not verify_pass(data.current_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,3 +73,4 @@ def change_password(db: Session, user: User, data: PasswordChangeRequest) -> Non
 
     user.password_hash = hash_pass(data.new_password)
     db.commit()
+    notify_password_changed(background_tasks, user)

@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -6,6 +6,7 @@ from server.models import Parcel, ParcelStatus, User, UserRole
 from server.API.user.schemas import AdminUserCreate, AdminUserUpdate, UserListParams, UserUpdateMe
 
 from server.API.common import paginate
+from server.email.notifications import notify_email_changed
 from server.src.sec import hash_pass
 
 PICKUP_OPEN_STATUSES = frozenset({
@@ -50,8 +51,14 @@ def has_open_parcels(db: Session, user_id: int) -> bool:
     return (count or 0) > 0
 
 
-def update_me(db: Session, user: User, data: UserUpdateMe) -> User:
+def update_me(
+    db: Session,
+    user: User,
+    data: UserUpdateMe,
+    background_tasks: BackgroundTasks | None = None,
+) -> User:
     changes = data.model_dump(exclude_unset=True)
+    old_email = user.email
     if "email" in changes and changes["email"] != user.email:
         _check_email_unique(db, changes["email"], exclude_user_id=user.id)
 
@@ -60,6 +67,8 @@ def update_me(db: Session, user: User, data: UserUpdateMe) -> User:
 
     db.commit()
     db.refresh(user)
+    if user.email.lower() != old_email.lower():
+        notify_email_changed(background_tasks, user, old_email)
     return user
 
 

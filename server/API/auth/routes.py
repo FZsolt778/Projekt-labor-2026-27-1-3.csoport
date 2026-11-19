@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from server.API.deps import DbSession, CurrentUser
 from server.API.auth import services
@@ -11,8 +11,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # New customer account (201 Created), the response logs it in at once
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(data: RegisterRequest, db: DbSession):
-    return services.register(db, data)
+def register(data: RegisterRequest, db: DbSession, background_tasks: BackgroundTasks):
+    return services.register(db, data, background_tasks)
 
 
 # Form data: username = email, password (also used by Swagger "Authorize")
@@ -22,5 +22,5 @@ def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DbSession):
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(data: PasswordChangeRequest, db: DbSession, user: CurrentUser):
-    services.change_password(db, user, data)
+def change_password(data: PasswordChangeRequest, db: DbSession, user: CurrentUser, background_tasks: BackgroundTasks):
+    services.change_password(db, user, data, background_tasks)

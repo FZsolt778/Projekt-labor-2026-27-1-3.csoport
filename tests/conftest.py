@@ -20,6 +20,17 @@ from server.src.sec import create_access_token, hash_pass
 PASSWORD_HASH = hash_pass(PASSWORD)  
 
 
+@pytest.fixture(autouse=True)
+def _isolate_smtp(monkeypatch):
+    import server.email.client as email_client
+    from server.src.config import settings
+
+    monkeypatch.setattr(settings, "SMTP_ENABLED", False)
+    email_client._fastmail = None
+    yield
+    email_client._fastmail = None
+
+
 @pytest.fixture
 def db():
     # clean memory database for every test

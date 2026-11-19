@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from server.models import Parcel, ParcelEvent, ParcelStatus, User
@@ -7,6 +7,14 @@ from server.src.config import settings
 from server.API.contact.schemas import ContactRead
 from server.API.parcel.schemas import ParcelRead
 from server.API.parcel.services import add_event, get_by_tracking_number, require_status
+from server.email.notifications import (
+    notify_delivery_failed,
+    notify_parcel_auto_cancelled,
+    notify_parcel_delivered,
+    notify_parcel_out_for_delivery,
+    notify_parcel_picked_up,
+    notify_pickup_failed,
+)
 from server.API.courier.schemas import (
     CourierHistory, CourierHistoryItem, CourierHistoryParams, CourierTask, CourierTaskParams, CourierTaskType,
     ParcelFailRequest,
@@ -70,31 +78,55 @@ def list_tasks(db: Session, courier: User, params: CourierTaskParams) -> list[Co
     return [task for _, task in tasks]
 
 
-def pickup(db: Session, courier: User, tracking_number: str) -> Parcel:
+def pickup(
+    db: Session,
+    courier: User,
+    tracking_number: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.PICKUP)
     require_status(parcel, ParcelStatus.PICKUP_ASSIGNED)
     add_event(db, parcel, ParcelStatus.PICKED_UP, actor=courier, courier_id=courier.id)
     db.commit()
+    notify_parcel_picked_up(background_tasks, parcel)
     return parcel
 
 
-def start_delivery(db: Session, courier: User, tracking_number: str) -> Parcel:
+def start_delivery(
+    db: Session,
+    courier: User,
+    tracking_number: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.DELIVERY)
     require_status(parcel, ParcelStatus.DELIVERY_ASSIGNED)
     add_event(db, parcel, ParcelStatus.OUT_FOR_DELIVERY, actor=courier, courier_id=courier.id)
     db.commit()
+    notify_parcel_out_for_delivery(background_tasks, parcel)
     return parcel
 
 
-def deliver(db: Session, courier: User, tracking_number: str) -> Parcel:
+def deliver(
+    db: Session,
+    courier: User,
+    tracking_number: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = _assigned_parcel(db, courier, tracking_number, CourierTaskType.DELIVERY)
     require_status(parcel, ParcelStatus.OUT_FOR_DELIVERY)
     add_event(db, parcel, ParcelStatus.DELIVERED, actor=courier, courier_id=courier.id)
     db.commit()
+    notify_parcel_delivered(background_tasks, parcel)
     return parcel
 
 
-def fail(db: Session, courier: User, tracking_number: str, data: ParcelFailRequest) -> Parcel:
+def fail(
+    db: Session,
+    courier: User,
+    tracking_number: str,
+    data: ParcelFailRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> Parcel:
     parcel = get_by_tracking_number(db, tracking_number)
     is_pickup_courier = parcel.pickup_courier_id == courier.id
     is_delivery_courier = parcel.delivery_courier_id == courier.id
@@ -102,7 +134,9 @@ def fail(db: Session, courier: User, tracking_number: str, data: ParcelFailReque
         raise _not_found()
     require_status(parcel, ParcelStatus.PICKUP_ASSIGNED, ParcelStatus.OUT_FOR_DELIVERY)
 
-    if parcel.status == ParcelStatus.PICKUP_ASSIGNED:
+    was_pickup = parcel.status == ParcelStatus.PICKUP_ASSIGNED
+    failures = 0
+    if was_pickup:
         # Failed pickup: cancelled right away, the sender can book again
         if not is_pickup_courier:
             raise _not_found()
@@ -126,6 +160,20 @@ def fail(db: Session, courier: User, tracking_number: str, data: ParcelFailReque
         if failures >= settings.MAX_FAILED_DELIVERIES:
             add_event(db, parcel, ParcelStatus.CANCELLED, actor=courier, note=f"{failures} sikertelen kézbesítés")
     db.commit()
+    if was_pickup:
+        notify_pickup_failed(background_tasks, parcel, reason=data.note)
+    elif failures >= settings.MAX_FAILED_DELIVERIES:
+        notify_parcel_auto_cancelled(
+            background_tasks, parcel, reason=data.note, max_attempts=settings.MAX_FAILED_DELIVERIES
+        )
+    else:
+        notify_delivery_failed(
+            background_tasks,
+            parcel,
+            reason=data.note,
+            attempt=failures,
+            max_attempts=settings.MAX_FAILED_DELIVERIES,
+        )
     return parcel
 
 
