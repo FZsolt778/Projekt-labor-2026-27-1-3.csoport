@@ -1,10 +1,16 @@
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from server.models import Parcel, ParcelStatus, User, UserRole, Warehouse
 from server.API.parcel.services import add_event
 from server.API.user.services import get_courier_or_404
 from server.API.warehouse.schemas import CheckInRequest, DeliveryAssignRequest, PickupAssignRequest, WarehouseUpdate
+from server.email.notifications import (
+    notify_delivery_assigned,
+    notify_parcel_in_warehouse,
+    notify_parcel_schedule_updated,
+    notify_pickup_assigned,
+)
 
 # Bulk ops: validate every parcel first, then modify (all or nothing):
 # unknown tracking number → 404, wrong status → 409
@@ -80,7 +86,12 @@ def list_couriers(db: Session) -> list[User]:
     ))
 
 
-def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
+def check_in(
+    db: Session,
+    actor: User,
+    data: CheckInRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> list[Parcel]:
     parcels = _load_parcels(db, data.tracking_numbers)
     _require_statuses(parcels, ParcelStatus.PICKED_UP, ParcelStatus.FAILED)
 
@@ -94,6 +105,7 @@ def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
             f"Nincs elég hely a raktárban (szabad hely: {max(warehouse.capacity - current, 0)})",
         )
 
+    failed_ids = {p.id for p in parcels if p.status == ParcelStatus.FAILED}
     for parcel in parcels:
         if parcel.status == ParcelStatus.PICKED_UP:
             courier_id = parcel.pickup_courier_id
@@ -104,25 +116,44 @@ def check_in(db: Session, actor: User, data: CheckInRequest) -> list[Parcel]:
         parcel.warehouse_id = warehouse.id
         add_event(db, parcel, ParcelStatus.IN_WAREHOUSE, actor=actor, courier_id=courier_id)
     db.commit()
+    for parcel in parcels:
+        notify_parcel_in_warehouse(
+            background_tasks, parcel, returned_after_failure=(parcel.id in failed_ids)
+        )
     return parcels
 
 
-def assign_pickup(db: Session, actor: User, data: PickupAssignRequest) -> list[Parcel]:
+def assign_pickup(
+    db: Session,
+    actor: User,
+    data: PickupAssignRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
     parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after pickup
     _require_statuses(parcels, ParcelStatus.BOOKED, ParcelStatus.PICKUP_ASSIGNED)
 
+    newly_assigned: list[Parcel] = []
     for parcel in parcels:
         if parcel.status == ParcelStatus.PICKUP_ASSIGNED and parcel.pickup_courier_id == courier.id:
             continue
+        if parcel.status == ParcelStatus.BOOKED:
+            newly_assigned.append(parcel)
         parcel.pickup_courier_id = courier.id
         add_event(db, parcel, ParcelStatus.PICKUP_ASSIGNED, actor=actor, courier_id=courier.id)
     db.commit()
+    for parcel in newly_assigned:
+        notify_pickup_assigned(background_tasks, parcel)
     return parcels
 
 
-def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> list[Parcel]:
+def assign_delivery(
+    db: Session,
+    actor: User,
+    data: DeliveryAssignRequest,
+    background_tasks: BackgroundTasks | None = None,
+) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
     parcels = _load_parcels(db, data.tracking_numbers)
     # Locked after the courier started
@@ -136,6 +167,8 @@ def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> li
         )
 
     new_window = (data.delivery_date, data.delivery_slot.start, data.delivery_slot.end)
+    initial_assigned: list[Parcel] = []
+    rescheduled: list[Parcel] = []
     for parcel in parcels:
         current_window = (parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end)
         unchanged = (
@@ -145,8 +178,16 @@ def assign_delivery(db: Session, actor: User, data: DeliveryAssignRequest) -> li
         )
         if unchanged:
             continue
+        if parcel.status == ParcelStatus.IN_WAREHOUSE:
+            initial_assigned.append(parcel)
+        elif new_window != current_window:
+            rescheduled.append(parcel)
         parcel.delivery_date, parcel.delivery_window_start, parcel.delivery_window_end = new_window
         parcel.delivery_courier_id = courier.id
         add_event(db, parcel, ParcelStatus.DELIVERY_ASSIGNED, actor=actor, courier_id=courier.id)
     db.commit()
+    for parcel in initial_assigned:
+        notify_delivery_assigned(background_tasks, parcel)
+    for parcel in rescheduled:
+        notify_parcel_schedule_updated(background_tasks, parcel, notify_sender=True, notify_recipient=True)
     return parcels
