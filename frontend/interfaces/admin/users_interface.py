@@ -42,8 +42,8 @@ class UsersInterface(AdminPage):
         super().__init__(
             text.replace(" ", "-"),
             "Felhasználók",
-            "Felhasználók keresése, új futár, raktáros vagy adminisztrátor felvétele, az adatok és a "
-            "szerepkör módosítása. Az inaktivált felhasználó nem tud bejelentkezni, de az adatai megmaradnak.",
+            ""
+            "",
             parent,
         )
         self.users: list[dict] = []

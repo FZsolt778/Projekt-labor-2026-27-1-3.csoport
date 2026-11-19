@@ -2,7 +2,7 @@
 
 import json as jsonlib
 import os
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
@@ -128,7 +128,6 @@ FIELD_LABELS = {
     "pickup_courier_id": "Felvevő futár",
     "delivery_courier_id": "Kiszállító futár",
     "parcel_ids": "Csomagok",
-    "tracking_numbers": "Csomagszámok",
     "note": "Megjegyzés",
     "name": "Név",
     "capacity": "Kapacitás",
@@ -243,25 +242,38 @@ class ApiClient:
         self.token: str | None = None
         self.role: str | None = None
         self.user_id: int | None = None
+        self.expires_at: datetime | None = None
 
     @property
     def is_logged_in(self) -> bool:
         return self.token is not None
+
+    @property
+    def session_seconds_left(self) -> float | None:
+        if self.expires_at is None:
+            return None
+        return (self.expires_at - datetime.now(timezone.utc)).total_seconds()
+
+    def _start_session(self, data: dict) -> None:
+        self.token = data["access_token"]
+        self.role = data["role"]
+        self.user_id = data["user_id"]
+        expires_in = data.get("expires_in")
+        self.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if expires_in else None
 
     # --- Session ---
 
     def login(self, email: str, password: str) -> dict:
         # The login endpoint expects form data, not JSON
         data = self._request("POST", "/auth/login", data={"username": email, "password": password}, auth=False)
-        self.token = data["access_token"]
-        self.role = data["role"]
-        self.user_id = data["user_id"]
+        self._start_session(data)
         return data
 
     def logout(self) -> None:
         self.token = None
         self.role = None
         self.user_id = None
+        self.expires_at = None
     
     def registration(self, last_name: str, first_name: str, email: str, password: str, phone: str | None, postal_code: str | None, city: str | None, street: str | None, house_number: str | None) -> dict:
         data = self._request("POST",
@@ -277,10 +289,8 @@ class ApiClient:
                     "street": street,
                     "house_number": house_number
                 }, auth=False)
-        
-        self.token = data["access_token"]
-        self.role = data["role"]
-        self.user_id = data["user_id"]
+
+        self._start_session(data)
         return data
     
 
@@ -371,13 +381,11 @@ class _Worker(QRunnable):
             self.signals.finished.emit()
 
 
-# Keeps running workers alive until they finish
 _running: set[_Worker] = set()
 
 
 def run_in_background(fn: Callable, *args, on_success: Callable[[Any], None] | None = None,
                       on_error: Callable[[ApiError], None] | None = None, **kwargs) -> None:
-    # Runs fn(*args, **kwargs) on a worker thread; callbacks run on the GUI thread
     worker = _Worker(fn, args, kwargs)
     if on_success is not None:
         worker.signals.succeeded.connect(on_success)

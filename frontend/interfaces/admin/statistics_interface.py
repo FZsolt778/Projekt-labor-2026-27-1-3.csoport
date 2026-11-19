@@ -70,8 +70,8 @@ class StatisticsInterface(AdminPage):
         super().__init__(
             text.replace(" ", "-"),
             "Statisztikák",
-            "A raktár jelenlegi és napi kihasználtsága, valamint a futárok teljesítménye a választott "
-            "időszakban (legfeljebb 366 nap). A napi százalékok a raktár mostani kapacitásához viszonyítanak.",
+            ""
+            "",
             parent,
         )
         self.history_points: list[dict] = []
