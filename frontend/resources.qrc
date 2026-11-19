@@ -16,6 +16,14 @@
         <file alias="package-plus.svg">resources/icons/package-plus.svg</file>
         <file alias="package-x.svg">resources/icons/package-x.svg</file>
         <file alias="package-start.svg">resources/icons/package_start.svg</file>
+        
+        <file alias="van.svg">resources/icons/van.svg</file>
+        <file alias="warehouse.svg">resources/icons/warehouse.svg</file>
+        <file alias="stat.svg">resources/icons/stat.svg</file>
+        <file alias="refresh-cw.svg">resources/icons/refresh-cw.svg</file>
+        <file alias="trash.svg">resources/icons/trash.svg</file>
+        <file alias="users-round.svg">resources/icons/users-round.svg</file>
+
 
 
     </qresource>
