@@ -7,7 +7,9 @@ from qfluentwidgets import (
     PrimaryPushButton,
     setFont,
     CardWidget,
-    ComboBox
+    ComboBox,
+    InfoBar,
+    InfoBarPosition,
 )
 from PySide6.QtWidgets import (
     QFrame,
@@ -25,7 +27,7 @@ from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QStackedLayout
-from api_client import STATUS_LABELS, api, run_in_background
+from api_client import ApiError, STATUS_LABELS, api, run_in_background
 from qtlottie import init_qml
 
 logger = logging.getLogger(__name__)
@@ -170,48 +172,55 @@ class ManagementInterface(QFrame):
 
         self.trackingCardContent = QVBoxLayout(self.trackingCard)
         self.trackingCardContent.setContentsMargins(24, 20, 24, 20)
-        self.trackingCardContent.setSpacing(0)
+        self.trackingCardContent.setSpacing(8)
 
         self.trackingInfo = QWidget(self.trackingCard)
         self.trackingInfo.setStyleSheet("background: transparent;")
+        self.trackingInfo.setMaximumHeight(100)
         self.trackingInfoLayout = QVBoxLayout(self.trackingInfo)
         self.trackingInfoLayout.setContentsMargins(0, 0, 0, 0)
         self.trackingInfoLayout.setSpacing(8)
         self.currentStatusLabel = QLabel("")
         self.currentStatusLabel.setStyleSheet(
-            "color: #2383E2; font-size: 20px; font-weight: 700;"
+            "color: #2383E2; font-size: 22px; font-weight: 700;"
             "background: transparent;"
         )
+        self.currentStatusLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.currentStatusLabel.setWordWrap(True)
         self.trackingInfoLayout.addWidget(self.currentStatusLabel)
 
         self.trackingNumberLabel = QLabel("")
         self.trackingNumberLabel.setStyleSheet(
             "font-size: 15px; font-weight: 600; background: transparent;"
         )
+        self.trackingNumberLabel.hide()
         self.trackingInfoLayout.addWidget(self.trackingNumberLabel)
 
         self.packageSizeLabel = QLabel("")
         self.packageSizeLabel.setStyleSheet(
             "color: #6B6B6B; background: transparent;"
         )
+        self.packageSizeLabel.hide()
         self.trackingInfoLayout.addWidget(self.packageSizeLabel)
-        self.trackingCardContent.addWidget(self.trackingInfo, 3)
+        self.trackingCardContent.addWidget(self.trackingInfo)
 
         self.lottieAnimationContainer = QWidget(self.trackingCard)
         self.lottieAnimationContainer.setObjectName("lottieAnimationContainer")
         self.lottieAnimationContainer.setStyleSheet("background: transparent;")
-        self.trackingCardContent.addWidget(self.lottieAnimationContainer, 7)
+        self.trackingCardContent.addWidget(self.lottieAnimationContainer, 1)
+
         self.lottieAnimationPath = (
             Path(__file__).resolve().parents[2]
             / "resources"
             / "animations"
-            / "delivery.json"
+            / "PACKAGE_DELIVERED.json"
         )
         self.lottieAnimationLayout = QVBoxLayout(self.lottieAnimationContainer)
         self.lottieAnimationLayout.setContentsMargins(0, 0, 0, 0)
         self.lottieAnimationWidget: QQuickWidget | None = None
-        self._load_lottie_animation()
-
+        self._lottiePlaybackPending = False
+        self._lottieErrorConnected = False
+        self._activeInfoBar = None
 
 
        
@@ -226,19 +235,22 @@ class ManagementInterface(QFrame):
         
         #hide tracking card
         self.hide_widget(self.trackingCard)
-        
-        
+        self.lottieAnimationContainer.hide()
+        # Lottie is temporarily disabled; the status message remains active.
+        # self._load_lottie_animation(play=False)
         
     def set_tracking_card(self, parcelTracking) -> None:
         self.trackingNumberLabel.setText(f"Csomagszám: {parcelTracking['tracking_number']}");
         self.packageSizeLabel.setText(f"{parcelTracking['size']} Méret");
+        self.trackingNumberLabel.show()
+        self.packageSizeLabel.show()
         status = parcelTracking["status"]
         self.currentStatusLabel.setText(STATUS_LABELS.get(status, status))
         
         if not self.trackingCard.isVisible():
             self.trackingCard.show();
 
-    def _load_lottie_animation(self) -> None:
+    def _load_lottie_animation(self, play: bool = True) -> None:
         if not self.lottieAnimationPath.is_file():
             logger.warning(
                 "Lottie animation file not found: %s",
@@ -246,43 +258,77 @@ class ManagementInterface(QFrame):
             )
             return
 
-        if not init_qml():
-            raise RuntimeError("Could not register the Qt Lottie QML component.")
+        if self.lottieAnimationWidget is None:
+            if not init_qml():
+                raise RuntimeError("Could not register the Qt Lottie QML component.")
 
-        qml_path = (
-            Path(__file__).resolve().parents[2]
-            / "resources"
-            / "animations"
-            / "lottie_player.qml"
-        )
-        self.lottieAnimationWidget = QQuickWidget(self.lottieAnimationContainer)
-        self.lottieAnimationWidget.setResizeMode(
-            QQuickWidget.ResizeMode.SizeRootObjectToView
-        )
-        self.lottieAnimationWidget.setClearColor(Qt.GlobalColor.transparent)
-        self.lottieAnimationWidget.rootContext().setContextProperty(
-            "animationSource",
-            QUrl.fromLocalFile(str(self.lottieAnimationPath)),
-        )
-        self.lottieAnimationWidget.statusChanged.connect(
-            self._on_lottie_status_changed
-        )
-        self.lottieAnimationLayout.addWidget(self.lottieAnimationWidget)
-        self.lottieAnimationWidget.setSource(QUrl.fromLocalFile(str(qml_path)))
-
+            qml_path = (
+                Path(__file__).resolve().parents[2]
+                / "resources"
+                / "animations"
+                / "lottie_player.qml"
+            )
+            self.lottieAnimationWidget = QQuickWidget(
+                self.lottieAnimationContainer
+            )
+            self.lottieAnimationWidget.setAttribute(
+                Qt.WidgetAttribute.WA_TranslucentBackground
+            )
+            self.lottieAnimationWidget.setAttribute(
+                Qt.WidgetAttribute.WA_AlwaysStackOnTop
+            )
+            self.lottieAnimationWidget.setResizeMode(
+                QQuickWidget.ResizeMode.SizeRootObjectToView
+            )
+            self.lottieAnimationWidget.setClearColor(Qt.GlobalColor.transparent)
+            self.lottieAnimationWidget.setStyleSheet("background: transparent;")
+            self.lottieAnimationWidget.statusChanged.connect(
+                self._on_lottie_status_changed
+            )
+            self.lottieAnimationWidget.rootContext().setContextProperty(
+                "animationSource",
+                QUrl.fromLocalFile(str(self.lottieAnimationPath)),
+            )
+            self.lottieAnimationLayout.addWidget(self.lottieAnimationWidget)
+            self.lottieAnimationWidget.setSource(
+                QUrl.fromLocalFile(str(qml_path))
+            )
+        else:
+            self.lottieAnimationWidget.rootContext().setContextProperty(
+                "animationSource",
+                QUrl.fromLocalFile(str(self.lottieAnimationPath)),
+            )
         animation = self.lottieAnimationWidget.rootObject()
-        if animation is not None:
-            animation.error.connect(self._on_lottie_error)
+        if animation is None:
+            self._lottiePlaybackPending = play
+            return
 
-        if self.lottieAnimationWidget.status() == QQuickWidget.Status.Error:
-            self._on_lottie_status_changed(QQuickWidget.Status.Error)
+        if not self._lottieErrorConnected:
+            animation.error.connect(self._on_lottie_error)
+            self._lottieErrorConnected = True
+
+        self._lottiePlaybackPending = False
+        animation.stop()
+        if play:
+            animation.play()
 
     def _on_lottie_status_changed(self, status) -> None:
         widget = self.lottieAnimationWidget
-        if status != QQuickWidget.Status.Error or widget is None:
+        if widget is None:
             return
-        errors = "; ".join(error.toString() for error in widget.errors())
-        logger.error("Could not load Lottie player: %s", errors)
+        if status == QQuickWidget.Status.Error:
+            errors = "; ".join(error.toString() for error in widget.errors())
+            logger.error("Could not load Lottie player: %s", errors)
+            return
+
+        if status == QQuickWidget.Status.Ready and self._lottiePlaybackPending:
+            animation = widget.rootObject()
+            if animation is not None:
+                animation.error.connect(self._on_lottie_error)
+                self._lottieErrorConnected = True
+                self._lottiePlaybackPending = False
+                animation.stop()
+                animation.play()
 
     @staticmethod
     def _on_lottie_error(message: str) -> None:
@@ -294,7 +340,15 @@ class ManagementInterface(QFrame):
         sp_retain.setRetainSizeWhenHidden(True)
         widget.setSizePolicy(sp_retain)
         widget.hide()
-        
+
+    def _get_lottie_json(self, action: str) -> str | None:
+        return {
+            ManagerEndPoints.PICKUP.value: "PACKAGE_PICKUP.json",
+            ManagerEndPoints.START.value: "PACKAGE_STARTED.json",
+            ManagerEndPoints.DELIVER.value: "PACKAGE_DELIVERED.json",
+            ManagerEndPoints.FAIL.value: "PACKAGE_CANCELLED.json",
+        }.get(action)
+
     def onClickStatus(self) -> None:
         self.searchButton.setEnabled(False)
         parcel_id : str = self.parcelEdit.text().strip()
@@ -302,16 +356,79 @@ class ManagementInterface(QFrame):
         run_in_background(
             api.post,
             f"/courier/parcels/{parcel_id}/{end_point}",
-            on_success=self._on_tracking_success,
+            on_success=lambda result: self._on_tracking_success(
+                result,
+                end_point,
+                parcel_id,
+            ),
             on_error=self._on_tracking_error,
         )
-    def _on_tracking_success(self, result: object) -> None:
-        #self.set_tracking_card(result)
-        print(result);
+    def _on_tracking_success(
+        self,
+        result: object,
+        action: str,
+        requested_tracking_number: str,
+    ) -> None:
         self.searchButton.setEnabled(True)
+        response_tracking_number = (
+            result.get("tracking_number") if isinstance(result, dict) else None
+        )
+        if not isinstance(response_tracking_number, str):
+            response_tracking_number = requested_tracking_number
+
+        action_messages = {
+            ManagerEndPoints.PICKUP.value: "Felvette a {} csomagot.",
+            ManagerEndPoints.START.value: "Elindult a {} csomaggal.",
+            ManagerEndPoints.DELIVER.value: "Kézbesítette a {} csomagot.",
+            ManagerEndPoints.FAIL.value: "Törölte a {} csomagot.",
+        }
+        message_template = action_messages.get(
+            action,
+            "A {} csomag állapota frissült.",
+        )
+        self.currentStatusLabel.setText(
+            message_template.format(response_tracking_number)
+        )
+        self.trackingNumberLabel.clear()
+        self.packageSizeLabel.clear()
+        self.trackingNumberLabel.hide()
+        self.packageSizeLabel.hide()
+        self.trackingCard.show()
+        self._show_info_bar(
+            InfoBar.success,
+            "Sikeres művelet",
+            message_template.format(response_tracking_number),
+        )
+
+        # Lottie is temporarily disabled; the status message remains active.
+        # animation_file = self._get_lottie_json(action)
+        # if animation_file is not None:
+        #     self.lottieAnimationPath = self.lottieAnimationPath.parent / animation_file
+        #     self._load_lottie_animation(play=True)
         
-    def _on_tracking_error(self) -> None:
+    def _on_tracking_error(self, error: ApiError) -> None:
         self.searchButton.setEnabled(True)
+        self._show_info_bar(
+            InfoBar.error,
+            "Sikertelen művelet",
+            error.message,
+        )
+
+    def _show_info_bar(self, show, title: str, content: str) -> None:
+        if self._activeInfoBar is not None:
+            try:
+                self._activeInfoBar.close()
+            except RuntimeError:
+                pass
+
+        self._activeInfoBar = show(
+            title=title,
+            content=content,
+            isClosable=True,
+            position=InfoBarPosition.TOP_RIGHT,
+            duration=4000,
+            parent=self,
+        )
     
     def _on_track_box_changed(self) -> None:
         if self.statusBox.currentIndex() == 0: #Felvett
