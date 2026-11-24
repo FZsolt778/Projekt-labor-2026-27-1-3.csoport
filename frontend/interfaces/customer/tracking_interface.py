@@ -19,6 +19,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtCore import Qt, QSize, QRect
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen
 from api_client import ApiError, api, format_date, format_window, run_in_background
+from components.copy_button import CopyButton
 from PySide6.QtWidgets import QStackedLayout
 
 from types import SimpleNamespace
@@ -257,8 +258,10 @@ class TrackingInterface(QFrame):
         self.packageSizeLabel.setStyleSheet(
             "color: #6B6B6B; background: transparent;"
         )
+        self.trackingCopyButton = CopyButton(parent=self.trackingCard)
         self.trackingHeader = QHBoxLayout()
         self.trackingHeader.addWidget(self.trackingNumberLabel)
+        self.trackingHeader.addWidget(self.trackingCopyButton)
         self.trackingHeader.addStretch(1)
         self.trackingHeader.addWidget(self.packageSizeLabel)
         self.trackingCardContent.addLayout(self.trackingHeader)
@@ -316,6 +319,7 @@ class TrackingInterface(QFrame):
         
     def set_tracking_card(self, parcelTracking) -> None:
         self.trackingNumberLabel.setText(f"Csomagszám: {parcelTracking['tracking_number']}");
+        self.trackingCopyButton.value = parcelTracking['tracking_number']
         self.packageSizeLabel.setText(f"{parcelTracking['size']} Méret");
         self.routeLabel.setText(f"{parcelTracking['sender']['city']}, feladó  →  {parcelTracking['recipient']['city']}, címzett")
         # Empty until the warehouse assigns the delivery
