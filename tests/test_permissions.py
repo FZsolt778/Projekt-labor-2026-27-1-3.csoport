@@ -11,6 +11,8 @@ STAFF = {"logistician", "admin"}
 ADMIN = {"admin"}
 CUSTOMER = {"customer"}
 COURIER = {"courier"}
+# Booking: guests (None) and every role but the courier
+BOOKING = {None, "customer", "logistician", "admin"}
 
 ENDPOINTS = [
     ("GET", "/health", PUBLIC),
@@ -24,7 +26,7 @@ ENDPOINTS = [
     ("GET", "/users/999", ADMIN),
     ("PATCH", "/users/999", ADMIN),
     ("DELETE", "/users/999", ADMIN),
-    ("POST", "/parcels", PUBLIC),
+    ("POST", "/parcels", BOOKING),
     ("GET", "/parcels/track/FCNINCSILYEN", PUBLIC),
     ("GET", "/parcels/my", CUSTOMER),
     ("GET", "/parcels/my/999", CUSTOMER),
