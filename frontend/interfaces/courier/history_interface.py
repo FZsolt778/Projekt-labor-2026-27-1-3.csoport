@@ -21,6 +21,7 @@ from api_client import (
     format_datetime,
     run_in_background,
 )
+from components.copy_button import add_copy_buttons
 
 
 class DeliveryHistoryInterface(QFrame):
@@ -110,6 +111,11 @@ class DeliveryHistoryInterface(QFrame):
         self.historyTable.setMinimumHeight(240)
         self.mainLayout.addWidget(self.historyTable, 1)
 
+    # Loads when the page is opened, not only with the refresh button
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
         if not api.is_logged_in:
             self.messageLabel.setText("Az előzmények megtekintéséhez jelentkezz be.")
@@ -169,6 +175,7 @@ class DeliveryHistoryInterface(QFrame):
             )
             for column, value in enumerate(values):
                 self.historyTable.setItem(row, column, QTableWidgetItem(str(value)))
+        add_copy_buttons(self.historyTable, 2)
 
         self.periodLabel.setText(
             f"Időszak: {format_date(history['from_date'])} – "
