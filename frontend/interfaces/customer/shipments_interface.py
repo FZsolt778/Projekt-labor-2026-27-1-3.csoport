@@ -33,6 +33,7 @@ from api_client import (
     run_in_background,
     api,
 )
+from components.copy_button import add_copy_buttons
 from .parcel_helpers import load_my_parcels
 
 
@@ -244,6 +245,7 @@ class ShipmentsInterface(QFrame):
             )
             for column, value in enumerate(values):
                 table.setItem(row, column, QTableWidgetItem(value))
+        add_copy_buttons(table, 0)
 
     def _show_selected_parcel(self, direction: str) -> None:
         table = self.sentTable if direction == "sent" else self.receivedTable
