@@ -30,6 +30,7 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont
 
 from api_client import ApiError, api, run_in_background
+from components.copy_button import CopyButton
 
 
 class BookingInterface(QFrame):
@@ -208,7 +209,14 @@ class BookingInterface(QFrame):
         self.bookingStatusLabel = QLabel(self.formContent)
         self.bookingStatusLabel.setWordWrap(True)
         self.bookingStatusLabel.hide()
-        self.formLayout.addWidget(self.bookingStatusLabel)
+        # Shown only after a successful booking, next to the new tracking number
+        self.bookingCopyButton = CopyButton(parent=self.formContent)
+        self.bookingCopyButton.hide()
+        self.bookingStatusRow = QHBoxLayout()
+        self.bookingStatusRow.addWidget(self.bookingStatusLabel, 1)
+        self.bookingStatusRow.addWidget(self.bookingCopyButton)
+        self.bookingStatusRow.addStretch(0)
+        self.formLayout.addLayout(self.bookingStatusRow)
         self.bookingButton.clicked.connect(self.onClickBooking)
 
         for field, label in self.field_errors.values():
@@ -340,18 +348,25 @@ class BookingInterface(QFrame):
         self._clear_field_error(field, label)
         self.bookingStatusLabel.clear()
         self.bookingStatusLabel.hide()
+        self.bookingCopyButton.hide()
 
     def _set_status(self, message: str, *, success: bool = False) -> None:
         color = "#107C10" if success else "#D13438"
         self.bookingStatusLabel.setStyleSheet(f"color: {color};")
         self.bookingStatusLabel.setText(message)
+        # Success: one line with the copy button right after it; error: may wrap over the full width
+        self.bookingStatusLabel.setWordWrap(not success)
+        self.bookingStatusRow.setStretch(0, 0 if success else 1)
+        self.bookingStatusRow.setStretch(2, 1 if success else 0)
         self.bookingStatusLabel.show()
+        self.bookingCopyButton.hide()
 
     def _validate_booking(self) -> bool:
         for field, label in self.field_errors.values():
             self._clear_field_error(field, label)
         self.bookingStatusLabel.clear()
         self.bookingStatusLabel.hide()
+        self.bookingCopyButton.hide()
         is_valid = True
 
         for person_name, fields in (
@@ -459,6 +474,9 @@ class BookingInterface(QFrame):
         if tracking_number:
             message += f" Nyomkövetési szám: {tracking_number}"
         self._set_status(message, success=True)
+        if tracking_number:
+            self.bookingCopyButton.value = tracking_number
+            self.bookingCopyButton.show()
 
     def _on_booking_error(self, error: ApiError) -> None:
         self.bookingButton.setEnabled(True)
