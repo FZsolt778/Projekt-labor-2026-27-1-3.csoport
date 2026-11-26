@@ -5,6 +5,7 @@ from qfluentwidgets import (
     ComboBox,
     LineEdit,
     PrimaryPushButton,
+    PushButton,
     SubtitleLabel,
     setFont,
 )
@@ -33,7 +34,9 @@ from api_client import (
     run_in_background,
     api,
 )
-from components.copy_button import add_copy_buttons
+from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
+from ..admin.admin_helpers import confirm
 from .parcel_helpers import load_my_parcels
 
 
@@ -120,12 +123,17 @@ class ShipmentsInterface(QFrame):
         self.editorLayout = QVBoxLayout(self.editorFrame)
         self.editorLayout.setContentsMargins(0, 8, 0, 0)
         self.editorLayout.setSpacing(10)
+        # Title: the tracking number with a copy button, then the detail cards
         self.editorTitle = SubtitleLabel("Csomag adatai", self.editorFrame)
         setFont(self.editorTitle, 20, QFont.Weight.DemiBold)
-        self.editorLayout.addWidget(self.editorTitle)
-        self.detailsLabel = QLabel(self.editorFrame)
-        self.detailsLabel.setWordWrap(True)
-        self.editorLayout.addWidget(self.detailsLabel)
+        self.editorCopyButton = CopyButton(parent=self.editorFrame)
+        titleRow = QHBoxLayout()
+        titleRow.addWidget(self.editorTitle)
+        titleRow.addWidget(self.editorCopyButton)
+        titleRow.addStretch(1)
+        self.editorLayout.addLayout(titleRow)
+        self.details = ParcelDetails(self.editorFrame)
+        self.editorLayout.addWidget(self.details)
         self.editorMessage = QLabel(self.editorFrame)
         self.editorMessage.setWordWrap(True)
         self.editorLayout.addWidget(self.editorMessage)
@@ -141,11 +149,15 @@ class ShipmentsInterface(QFrame):
         self.pickupDate.setMinimumHeight(42)
         self.pickupSlot = ComboBox(self.editForm)
         self.pickupSlot.addItems(PICKUP_SLOTS)
+        self.senderEmailEdit = LineEdit(self.editForm)
+        self.senderPhoneEdit = LineEdit(self.editForm)
         self.postalCodeEdit = LineEdit(self.editForm)
         self.cityEdit = LineEdit(self.editForm)
         self.streetEdit = LineEdit(self.editForm)
         self.houseNumberEdit = LineEdit(self.editForm)
         for field in (
+            self.senderEmailEdit,
+            self.senderPhoneEdit,
             self.postalCodeEdit,
             self.cityEdit,
             self.streetEdit,
@@ -153,6 +165,8 @@ class ShipmentsInterface(QFrame):
         ):
             field.setClearButtonEnabled(True)
             field.setMinimumHeight(42)
+        self.senderEmailEdit.setPlaceholderText("Email cím")
+        self.senderPhoneEdit.setPlaceholderText("Telefonszám (nem kötelező)")
         self.postalCodeEdit.setPlaceholderText("Irányítószám")
         self.cityEdit.setPlaceholderText("Város")
         self.streetEdit.setPlaceholderText("Utca, közterület")
@@ -160,6 +174,8 @@ class ShipmentsInterface(QFrame):
         self.editFormLayout.addRow("Csomagméret", self.sizeCombo)
         self.editFormLayout.addRow("Felvétel dátuma", self.pickupDate)
         self.editFormLayout.addRow("Felvételi idősáv", self.pickupSlot)
+        self.editFormLayout.addRow("Feladó email címe", self.senderEmailEdit)
+        self.editFormLayout.addRow("Feladó telefonszáma", self.senderPhoneEdit)
         self.editFormLayout.addRow("Címzett irányítószáma", self.postalCodeEdit)
         self.editFormLayout.addRow("Címzett városa", self.cityEdit)
         self.editFormLayout.addRow("Címzett utcája", self.streetEdit)
@@ -168,7 +184,13 @@ class ShipmentsInterface(QFrame):
 
         self.saveButton = PrimaryPushButton("Módosítások mentése", self.editorFrame)
         self.saveButton.clicked.connect(self.save_changes)
-        self.editorLayout.addWidget(self.saveButton)
+        # Same deadline and states as editing (the server checks both the same way)
+        self.cancelButton = PushButton("Csomag lemondása", self.editorFrame)
+        self.cancelButton.clicked.connect(self.cancel_parcel)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.saveButton, 1)
+        buttons.addWidget(self.cancelButton)
+        self.editorLayout.addLayout(buttons)
         self.editorFrame.hide()
         self.contentLayout.addWidget(self.editorFrame)
         self.contentLayout.addStretch(1)
@@ -257,25 +279,9 @@ class ShipmentsInterface(QFrame):
         self.current_parcel = parcel
         self.editorFrame.show()
         sender = parcel["sender"]
-        recipient = parcel["recipient"]
-        pickup = (
-            f'{format_date(parcel["pickup_date"])} '
-            f'({format_window(parcel["pickup_window_start"], parcel["pickup_window_end"])})'
-        )
-        delivery = (
-            f'{format_date(parcel["delivery_date"])} '
-            f'({format_window(parcel["delivery_window_start"], parcel["delivery_window_end"])})'
-        )
-        self.detailsLabel.setText(
-            f"Csomagazonosító: {parcel['tracking_number']}\n"
-            f"Állapot: {STATUS_LABELS.get(parcel['status'], parcel['status'])} · "
-            f"Méret: {parcel['size']}\n"
-            f"Feladó: {sender['last_name']} {sender['first_name']}\n"
-            f"Címzett: {recipient['last_name']} {recipient['first_name']}\n"
-            f"Cím: {recipient['postal_code']} {recipient['city']}, "
-            f"{recipient['street']} {recipient['house_number']}\n"
-            f"Felvétel: {pickup}\nKiszállítás: {delivery}"
-        )
+        self.editorTitle.setText(parcel["tracking_number"])
+        self.editorCopyButton.value = parcel["tracking_number"]
+        self.details.set_parcel(parcel)
         status = parcel["status"]
         editable = (
             direction == "sent"
@@ -285,23 +291,22 @@ class ShipmentsInterface(QFrame):
         if not editable:
             self.editForm.hide()
             self.saveButton.hide()
+            self.cancelButton.hide()
             if direction == "received":
                 self.editorMessage.setText(
                     "A beérkező csomag adatait a feladó módosíthatja."
                 )
             else:
                 self.editorMessage.setText(
-                    "Ez a csomag már nem módosítható. A módosítás határideje "
+                    "Ez a csomag már nem módosítható és nem mondható le. A határidő "
                     "a tervezett felvétel előtti naptári nap."
                 )
             return
 
         self.editForm.show()
         self.saveButton.show()
-        self.editorMessage.setText(
-            f"Az előjegyzett csomag a felvétel előtti napig módosítható. "
-            f"Azonosító: {parcel['tracking_number']}"
-        )
+        self.cancelButton.show()
+        self.editorMessage.setText("Az előjegyzett csomag a felvétel előtti napig módosítható vagy lemondható.")
         self.sizeCombo.setCurrentText(parcel["size"])
         self.pickupDate.setDate(
             QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd")
@@ -312,6 +317,8 @@ class ShipmentsInterface(QFrame):
             parcel["pickup_window_end"],
         ).replace("–", "-")
         self.pickupSlot.setCurrentText(slot)
+        self.senderEmailEdit.setText(sender["email"])
+        self.senderPhoneEdit.setText(sender.get("phone") or "")
         recipient = parcel["recipient"]
         self.postalCodeEdit.setText(recipient["postal_code"])
         self.cityEdit.setText(recipient["city"])
@@ -345,6 +352,17 @@ class ShipmentsInterface(QFrame):
                 "house_number": self.houseNumberEdit.text().strip(),
             },
         }
+        # Sender contact only when it changed (the phone may be cleared)
+        sender = parcel["sender"]
+        email = self.senderEmailEdit.text().strip()
+        phone = self.senderPhoneEdit.text().strip() or None
+        sender_changes = {}
+        if email != sender["email"]:
+            sender_changes["email"] = email
+        if phone != (sender.get("phone") or None):
+            sender_changes["phone"] = phone
+        if sender_changes:
+            payload["sender"] = sender_changes
         run_in_background(
             api.patch,
             f"/parcels/my/{parcel['id']}",
@@ -358,6 +376,36 @@ class ShipmentsInterface(QFrame):
         self._update_success_message = (
             f"A(z) {parcel['tracking_number']} csomag adatai sikeresen módosultak."
         )
+        self.refresh()
+
+    def cancel_parcel(self) -> None:
+        parcel = self.current_parcel
+        if parcel is None:
+            return
+        if not confirm(
+            self,
+            "Csomag lemondása",
+            f"Biztosan lemondod a(z) {parcel['tracking_number']} csomagot? A lemondás nem vonható vissza.",
+            "Lemondás",
+        ):
+            return
+        self.messageLabel.clear()
+        self.editorFrame.setEnabled(False)
+        run_in_background(
+            api.post,
+            f"/parcels/my/{parcel['id']}/cancel",
+            on_success=self._on_cancel_success,
+            on_error=self._on_update_error,
+        )
+
+    def _on_cancel_success(self, parcel: dict[str, object]) -> None:
+        self.editorFrame.setEnabled(True)
+        self._update_success_message = f"A(z) {parcel['tracking_number']} csomagot lemondtad."
+        self.refresh()
+
+    # Fresh list every time the page is opened
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
         self.refresh()
 
     def _on_update_error(self, error: ApiError) -> None:

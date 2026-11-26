@@ -1,4 +1,3 @@
-# Admin: warehouse utilization (now and per day) and courier statistics for a date range
 from math import ceil
 
 from PySide6.QtCharts import QChart, QChartView, QDateTimeAxis, QLineSeries, QValueAxis
@@ -11,7 +10,6 @@ from api_client import ApiError, api, format_date, run_in_background
 from theme import ACCENT, ACCENT_LIGHT, BORDER, TEXT_SECONDARY
 from .admin_helpers import MUTED_STYLE, AdminPage, create_table, fill_table, full_name
 
-# Meter fill by severity (status colors always come with a text label)
 WARNING_COLOR = "#FAB219"
 CRITICAL_COLOR = "#D13438"
 WARNING_PERCENT = 75
@@ -34,7 +32,6 @@ def _number(value: float | None, digits: int = 1) -> str:
 
 
 class UtilizationMeter(QWidget):
-    # Rounded bar: the track is a light step of the fill's hue
     def __init__(self, parent=None):
         super().__init__(parent)
         self.percent = 0.0

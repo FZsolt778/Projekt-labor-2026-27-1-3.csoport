@@ -48,6 +48,7 @@ class RegistrationInterface(QFrame):
         self, field: QWidget, label: QLabel
     ) -> None:
         self._clear_field_error(field, label)
+        self.registrationErrorLabel.hide()
 
     def _validate_registration(self) -> bool:
         fields = (
@@ -425,6 +426,9 @@ class RegistrationInterface(QFrame):
         self.formLayout.addLayout(self.streetForm)
         self.formLayout.addSpacing(5)
         self.formLayout.addWidget(self.registrationButton)
+        # Server answers that belong to no field (or point at the marked fields)
+        self.registrationErrorLabel = self._create_error_label()
+        self.formLayout.addWidget(self.registrationErrorLabel)
         self.formLayout.addStretch(1)
 
 
@@ -461,7 +465,7 @@ class RegistrationInterface(QFrame):
     
      self.formFrame.setEnabled(False)
      self.registrationButton.setText("Regisztráció folyamatban...")
-     print("run in background");
+     self.registrationErrorLabel.hide()
      run_in_background(
         api.registration,
         self.lastNameEdit.text().strip(),
@@ -485,6 +489,30 @@ class RegistrationInterface(QFrame):
     def _on_registration_error(self, error: ApiError) -> None:
         self.formFrame.setEnabled(True)
         self.registrationButton.setText("Regisztráció")
+        fields = {
+            "last_name": (self.lastNameEdit, self.lastNameErrorLabel),
+            "first_name": (self.firstNameEdit, self.firstNameErrorLabel),
+            "email": (self.emailEdit, self.emailErrorLabel),
+            "password": (self.passwordEdit, self.passwordErrorLabel),
+            "phone": (self.phoneEdit, self.phoneErrorLabel),
+            "postal_code": (self.postalCodeEdit, self.postalCodeErrorLabel),
+            "city": (self.cityEdit, self.cityErrorLabel),
+            "street": (self.streetEdit, self.streetErrorLabel),
+            "house_number": (self.houseNumberEdit, self.houseNumberErrorLabel),
+        }
+        errors = dict(error.field_errors)
+        # 409: the email address belongs to another active user
+        if error.status_code == 409 and not errors:
+            errors["email"] = error.message
+        shown = 0
+        for key, message in errors.items():
+            if key in fields:
+                self._show_field_error(*fields[key], message)
+                shown += 1
+        self.registrationErrorLabel.setText(
+            "Javítsd a pirossal jelölt mezőket." if shown else error.message
+        )
+        self.registrationErrorLabel.show()
 
     def _create_error_label(self) -> QLabel:
         label = QLabel(self.formFrame)

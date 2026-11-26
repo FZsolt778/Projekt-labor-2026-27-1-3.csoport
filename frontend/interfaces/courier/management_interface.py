@@ -27,7 +27,7 @@ from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QStackedLayout
-from api_client import ApiError, STATUS_LABELS, api, run_in_background
+from api_client import ApiError, api, run_in_background
 from qtlottie import init_qml
 from .courier_actions import ask_fail_note
 
@@ -189,20 +189,6 @@ class ManagementInterface(QFrame):
         self.currentStatusLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.currentStatusLabel.setWordWrap(True)
         self.trackingInfoLayout.addWidget(self.currentStatusLabel)
-
-        self.trackingNumberLabel = QLabel("")
-        self.trackingNumberLabel.setStyleSheet(
-            "font-size: 15px; font-weight: 600; background: transparent;"
-        )
-        self.trackingNumberLabel.hide()
-        self.trackingInfoLayout.addWidget(self.trackingNumberLabel)
-
-        self.packageSizeLabel = QLabel("")
-        self.packageSizeLabel.setStyleSheet(
-            "color: #6B6B6B; background: transparent;"
-        )
-        self.packageSizeLabel.hide()
-        self.trackingInfoLayout.addWidget(self.packageSizeLabel)
         self.trackingCardContent.addWidget(self.trackingInfo)
 
         self.lottieAnimationContainer = QWidget(self.trackingCard)
@@ -239,17 +225,6 @@ class ManagementInterface(QFrame):
         self.lottieAnimationContainer.hide()
         # Lottie is temporarily disabled; the status message remains active.
         # self._load_lottie_animation(play=False)
-        
-    def set_tracking_card(self, parcelTracking) -> None:
-        self.trackingNumberLabel.setText(f"Csomagszám: {parcelTracking['tracking_number']}");
-        self.packageSizeLabel.setText(f"{parcelTracking['size']} Méret");
-        self.trackingNumberLabel.show()
-        self.packageSizeLabel.show()
-        status = parcelTracking["status"]
-        self.currentStatusLabel.setText(STATUS_LABELS.get(status, status))
-        
-        if not self.trackingCard.isVisible():
-            self.trackingCard.show();
 
     def _load_lottie_animation(self, play: bool = True) -> None:
         if not self.lottieAnimationPath.is_file():
@@ -404,10 +379,6 @@ class ManagementInterface(QFrame):
         self.currentStatusLabel.setText(
             message_template.format(response_tracking_number)
         )
-        self.trackingNumberLabel.clear()
-        self.packageSizeLabel.clear()
-        self.trackingNumberLabel.hide()
-        self.packageSizeLabel.hide()
         self.trackingCard.show()
         self._show_info_bar(
             InfoBar.success,

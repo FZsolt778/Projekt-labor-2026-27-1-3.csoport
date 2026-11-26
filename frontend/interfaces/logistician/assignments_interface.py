@@ -1,513 +1,437 @@
-
+# Logistician (and admin): parcels around the warehouse, check-in and courier assignment for one or more parcels
 from datetime import date
 
+from PySide6.QtCore import QDate, QItemSelectionModel
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QAbstractItemView, QDateEdit, QFrame, QHBoxLayout, QLabel, QListWidget, QVBoxLayout
 from qfluentwidgets import (
+    BodyLabel,
+    ComboBox,
+    InfoBar,
+    InfoBarPosition,
     LineEdit,
-    PrimaryPushButton,
-    TableWidget,
-    TransparentPushButton,
-    PushButton,
     MessageBoxBase,
+    PrimaryPushButton,
+    PushButton,
     SubtitleLabel,
-    ComboBox
+    setFont,
 )
 
-from PySide6.QtGui import QIcon
-
-from PySide6.QtCore import QDate, QSize, Signal
-from PySide6.QtWidgets import (
-    QComboBox,
-    QFrame,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QDateEdit,
-    QPushButton,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-    
+from api_client import (
+    STATUS_LABELS,
+    TIME_SLOTS,
+    ApiError,
+    api,
+    format_date,
+    format_datetime,
+    format_window,
+    run_in_background,
+)
+from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
+from ..admin.admin_helpers import (
+    ERROR_STYLE,
+    MUTED_STYLE,
+    AdminPage,
+    DateFilter,
+    Pager,
+    create_table,
+    fill_table,
+    full_name,
+    set_message,
+    text_or_none,
 )
 
-from api_client import STATUS_LABELS, TIME_SLOTS, ApiError, api, run_in_background
-
-REFRESH_ICON_PATH = ":/icons/test-refresh.svg"
-PICKUP_ICON_PATH = ":/icons/test-pickup.svg"
-DELIVERY_ICON_PATH = ":/icons/test-delivery.svg"
-WAREHOUSE_ICON_PATH = ":/icons/test-warehouse.svg"
-
-
-
-
-class CourierAssignModal(MessageBoxBase):
-
-    def __init__(self, parent=None, title: str = "Futár", parcel: dict | None = None):
-        super().__init__(parent)
-        self.titleLabel = SubtitleLabel(title)
-        
-        self.yesButton.setText("Hozzárendel")        
-        self.cancelButton.setText("Mégsem")
-        self.yesButton.setEnabled(False)
-        
-        self.courierBox = ComboBox()
-        # Set placeholder text
-        self.courierBox.setPlaceholderText("Válassz futárt...")
-
-        # Add options
-        run_in_background(
-            api.get,
-            "/warehouse/couriers",
-            on_success=self._on_get_couriers_success,
-            on_error=self._on_get_couriers_error,
-        )
-
-        # Signal of current option index change
-        self.courierBox.currentIndexChanged.connect(
-            lambda index: self.yesButton.setEnabled(index != -1)
-        )
+IN_WAREHOUSE_STATUSES = ("in_warehouse", "delivery_assigned")
+ACTIONS = {
+    "check_in": ("Beérkeztetés", {"picked_up", "failed"},
+                 ""),
+    "pickup": ("Felvétel kiosztása", {"booked", "pickup_assigned"},
+               ""),
+    "delivery": ("Kiszállítás kiosztása", {"in_warehouse", "delivery_assigned"},
+                 ""),
+}
+DONE_MESSAGES = {
+    "check_in": "{} csomag beérkeztetve.",
+    "pickup": "{} csomag felvétele kiosztva.",
+    "delivery": "{} csomag kiszállítása kiosztva.",
+}
+ENDPOINTS = {"check_in": "/warehouse/check-in", "pickup": "/warehouse/assign-pickup",
+             "delivery": "/warehouse/assign-delivery"}
 
 
-        # Add components to the layout
-        self.viewLayout.addWidget(self.titleLabel)
-        self.viewLayout.addWidget(self.courierBox)
-
-        self.deliveryDate: QDateEdit | None = None
-        self.deliverySlot: ComboBox | None = None
-        if parcel is not None:
-            pickup_date = QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd")
-            minimum_date = max(QDate.currentDate(), pickup_date)
-
-            self.deliveryDate = QDateEdit(self)
-            self.deliveryDate.setCalendarPopup(True)
-            self.deliveryDate.setDisplayFormat("yyyy-MM-dd")
-            self.deliveryDate.setMinimumDate(minimum_date)
-
-            delivery_date = QDate.fromString(
-                parcel["delivery_date"] or "",
-                "yyyy-MM-dd",
-            )
-            self.deliveryDate.setDate(
-                delivery_date
-                if delivery_date.isValid() and delivery_date >= minimum_date
-                else minimum_date
-            )
-            self.viewLayout.addWidget(QLabel("Kiszállítás napja", self))
-            self.viewLayout.addWidget(self.deliveryDate)
-
-            self.deliverySlot = ComboBox(self)
-            self.deliverySlot.addItems(TIME_SLOTS)
-            start = parcel["delivery_window_start"]
-            end = parcel["delivery_window_end"]
-            if start is not None and end is not None:
-                slot_index = self.deliverySlot.findText(f"{start[:5]}-{end[:5]}")
-                if slot_index >= 0:
-                    self.deliverySlot.setCurrentIndex(slot_index)
-            self.viewLayout.addWidget(QLabel("Kiszállítási idősáv", self))
-            self.viewLayout.addWidget(self.deliverySlot)
-
-        # Set the minimum width of the dialog box
-        self.widget.setMinimumWidth(350)
-    
-    def _on_get_couriers_success(self, result : object) -> None:
-        for courier in result:
-            self.courierBox.addItem(f"{courier["first_name"]} {courier["last_name"]}", userData=courier["id"])
-        # Deselect
-        self.courierBox.setCurrentIndex(-1)
-        self.yesButton.setEnabled(False);
-            
-    def _on_get_couriers_error(error) -> None:
-        error
-
-
-def showCourierAssignModal(window) -> int:
-    dialog = CourierAssignModal(window)
-    if dialog.exec():
-        return dialog.courierBox.currentData()
-    else:
-        return -1
-
-
-def showDeliveryAssignModal(window, parcel: dict) -> dict | None:
-    dialog = CourierAssignModal(window, parcel=parcel)
-    if not dialog.exec():
-        return None
-    if dialog.deliveryDate is None or dialog.deliverySlot is None:
-        raise RuntimeError("A kiszállítási időpont mezői nem jöttek létre.")
+def _load(params: dict) -> dict:
+    in_house = sum(api.get("/parcels", {"status": status, "limit": 1})["total"] for status in IN_WAREHOUSE_STATUSES)
     return {
-        "courier_id": dialog.courierBox.currentData(),
-        "delivery_date": dialog.deliveryDate.date().toString("yyyy-MM-dd"),
-        "delivery_slot": dialog.deliverySlot.currentText(),
+        "page": api.get("/parcels", params),
+        "couriers": api.get("/warehouse/couriers"),
+        "warehouse": api.get("/warehouse"),
+        "in_warehouse": in_house,
     }
 
 
+def _post(path: str, body: dict, action: str, count: int) -> tuple[str, int]:
+    api.post(path, body)
+    return action, count
+
+
+def _when(day: str | None, start: str | None, end: str | None) -> str:
+    return f"{format_date(day)} {format_window(start, end)}" if day else "–"
+
+
+def _slot(start: str | None, end: str | None) -> str | None:
+    return f"{start[:5]}-{end[:5]}" if start and end else None
 
 
 
-class LogisticianInterface(QFrame):
-    
 
-    def __init__(self, text: str, parent=None):
-        super().__init__(parent=parent)
+class AssignDialog(MessageBoxBase):
 
-        self.setObjectName(text.replace(" ", "-"))
-        
-        self.vBoxLayout = QVBoxLayout(self)
-        self.vBoxLayout.setContentsMargins(10, 10, 10, 10)
-        self.vBoxLayout.setSpacing(0)
-        
-        self.table = TableWidget(self)
+    def __init__(self, parent, couriers: list[dict], count: int, delivery: dict | None = None):
+        super().__init__(parent)
+        title = "Kiszállítás kiosztása" if delivery is not None else "Felvétel kiosztása"
+        self.titleLabel = SubtitleLabel(title, self.widget)
+        self.infoLabel = BodyLabel(f"{count} csomag", self.widget)
+        self.infoLabel.setStyleSheet(MUTED_STYLE)
+        self.courierBox = ComboBox(self.widget)
+        self.courierBox.setPlaceholderText("Válassz futárt...")
+        for courier in couriers:
+            self.courierBox.addItem(full_name(courier), userData=courier["id"])
+        self.courierBox.setCurrentIndex(-1)
+        self.courierBox.currentIndexChanged.connect(lambda index: self.yesButton.setEnabled(index >= 0))
+        self.viewLayout.addWidget(self.titleLabel)
+        self.viewLayout.addWidget(self.infoLabel)
+        self.viewLayout.addWidget(self.courierBox)
+        if not couriers:
+            empty = QLabel("Nincs aktív futár, akihez a csomag kiosztható.", self.widget)
+            empty.setStyleSheet(ERROR_STYLE)
+            self.viewLayout.addWidget(empty)
 
-        # Enable border and set rounded corners
-        self.table.setBorderVisible(True)
-        self.table.setBorderRadius(8)
+        self.deliveryDate: QDateEdit | None = None
+        self.deliverySlot: ComboBox | None = None
+        if delivery is not None:
+            self.deliveryDate = QDateEdit(self.widget)
+            self.deliveryDate.setCalendarPopup(True)
+            self.deliveryDate.setDisplayFormat("yyyy-MM-dd")
+            self.deliveryDate.setMinimumDate(delivery["min_date"])
+            self.deliveryDate.setDate(delivery["date"])
+            self.deliverySlot = ComboBox(self.widget)
+            self.deliverySlot.addItems(TIME_SLOTS)
+            if delivery["slot"] in TIME_SLOTS:
+                self.deliverySlot.setCurrentText(delivery["slot"])
+            self.viewLayout.addWidget(QLabel("Kiszállítás napja", self.widget))
+            self.viewLayout.addWidget(self.deliveryDate)
+            self.viewLayout.addWidget(QLabel("Kiszállítási idősáv", self.widget))
+            self.viewLayout.addWidget(self.deliverySlot)
 
-        self.table.setWordWrap(False)
-        self.table.setColumnCount(17)
+        self.yesButton.setText("Kiosztás")
+        self.yesButton.setEnabled(False)
+        self.cancelButton.setText("Mégse")
+        self.widget.setMinimumWidth(380)
 
-        # Set horizontal header and hide vertical header
-        self.table.setHorizontalHeaderLabels(
-            ['Id',
-             'Nyomkövetési szám',
-             'Méret',
-             'Felvételi dátum',
-             'Felvételi idő (k)',
-             'Felvételi idő (v)',
-             'Kézbesítési dátum',
-             'Kézbesítési idő (k)',
-             'Kézbesítési idő (v)',
-             'Felvevő futár (id)',
-             'Felvéve (dátum)',
-             'Raktárba (dátum)',
-             'Kiszállító futár (id)',
-             'Kiszállítás k. (dátum)',
-             'Kiszállítva (dátum)',
-             'Státusz',
-             'Műveletek'])
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(16, QHeaderView.Fixed)
-        self.table.setColumnWidth(16, 340)
-        
-        self.table.verticalHeader().hide()
-        
-        filterLayout = QHBoxLayout()
-        self.searchEdit = LineEdit(self)
+    def values(self) -> dict:
+        body = {"courier_id": self.courierBox.currentData()}
+        if self.deliveryDate is not None:
+            body["delivery_date"] = self.deliveryDate.date().toString("yyyy-MM-dd")
+            body["delivery_slot"] = self.deliverySlot.currentText()
+        return body
+
+
+class LogisticianInterface(AdminPage):
+
+    def __init__(self, text: str = "Logistician Interface", parent=None):
+        super().__init__(
+            text.replace(" ", "-"),
+            "Logisztika",
+            ""
+            ""
+            "",
+            parent,
+        )
+        self.parcels: list[dict] = []
+        self.couriers: list[dict] = []
+        self.detail_id: int | None = None
+        self._keep_ids: set[int] = set()
+        self._busy = False
+
+        self.warehouseLabel = QLabel(self.content)
+        setFont(self.warehouseLabel, 15, QFont.Weight.DemiBold)
+        self.contentLayout.insertWidget(2, self.warehouseLabel)
+
+        filters = QHBoxLayout()
+        self.searchEdit = LineEdit(self.content)
         self.searchEdit.setPlaceholderText("Csomagszám, feladó vagy címzett neve")
         self.searchEdit.setClearButtonEnabled(True)
         self.searchEdit.returnPressed.connect(self._apply_filters)
-        filterLayout.addWidget(self.searchEdit, 2)
-
-        filterLayout.addWidget(QLabel("Csomag állapota:"))
-        self.statusFilter = QComboBox(self)
-        self.statusFilter.addItem("Minden állapot", None)
+        self.statusFilter = ComboBox(self.content)
+        self.statusFilter.addItem("Minden állapot", userData=None)
         for status, label in STATUS_LABELS.items():
-            self.statusFilter.addItem(label, status)
-        filterLayout.addWidget(self.statusFilter)
-
-        self.courierFilter = QComboBox(self)
-        self.courierFilter.addItem("Minden futár", None)
-        filterLayout.addWidget(self.courierFilter)
-
-        self.filterButton = QPushButton("Szűrés", self)
-        self.filterButton.setObjectName("applyFilters")
+            self.statusFilter.addItem(label, userData=status)
+        self.courierFilter = ComboBox(self.content)
+        self.courierFilter.addItem("Minden futár", userData=None)
+        self.filterButton = PushButton("Szűrés", self.content)
         self.filterButton.clicked.connect(self._apply_filters)
-        filterLayout.addWidget(self.filterButton)
+        filters.addWidget(self.searchEdit, 2)
+        filters.addWidget(self.statusFilter, 1)
+        filters.addWidget(self.courierFilter, 1)
+        filters.addWidget(self.filterButton)
+        self.contentLayout.insertLayout(3, filters)
+        self.pickupDayFilter = DateFilter("Felvétel napja", self.content)
+        self.deliveryDayFilter = DateFilter("Kiszállítás napja", self.content)
+        dayFilters = QHBoxLayout()
+        dayFilters.addWidget(self.pickupDayFilter)
+        dayFilters.addSpacing(24)
+        dayFilters.addWidget(self.deliveryDayFilter)
+        dayFilters.addStretch(1)
+        self.contentLayout.insertLayout(4, dayFilters)
 
-        self.refreshButton = QPushButton(QIcon(":/icons/refresh-cw.svg"), "Frissítés", self)
-        self.refreshButton.setObjectName("refreshParcels")
-        self.refreshButton.setIconSize(QSize(16, 16))
-        self.refreshButton.setStyleSheet(
-            "background-color: #2383E2; color: white; font-weight: bold;"
+        self.actionButtons = {}
+        actions = QHBoxLayout()
+        for action, (label, _statuses, _rule) in ACTIONS.items():
+            button = PrimaryPushButton(label, self.content)
+            button.clicked.connect(lambda _checked=False, a=action: self._run(a))
+            button.setEnabled(False)
+            actions.addWidget(button)
+            self.actionButtons[action] = button
+        self.selectionLabel = QLabel(self.content)
+        self.selectionLabel.setStyleSheet(MUTED_STYLE)
+        actions.addSpacing(12)
+        actions.addWidget(self.selectionLabel)
+        actions.addStretch(1)
+        self.contentLayout.addLayout(actions)
+        self.ruleLabel = QLabel(self.content)
+        self.ruleLabel.setWordWrap(True)
+        self.ruleLabel.setStyleSheet(MUTED_STYLE)
+        self.ruleLabel.hide()
+        self.contentLayout.addWidget(self.ruleLabel)
+
+        self.table = create_table(
+            ["Csomagszám", "Állapot", "Méret", "Feladó", "Címzett", "Felvétel", "Kiszállítás",
+             "Felvevő futár", "Kiszállító futár"],
+            self.content,
+            stretch=4,
         )
-        self.refreshButton.clicked.connect(
-            lambda _checked=False: self.getParcels()
-        )
-        filterLayout.addWidget(self.refreshButton)
-        filterLayout.addStretch()
-        self.vBoxLayout.addLayout(filterLayout)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.contentLayout.addWidget(self.table)
+        self.pager = Pager(self.content)
+        self.pager.pageChanged.connect(self.refresh)
+        self.contentLayout.addWidget(self.pager)
 
-        self.vBoxLayout.addWidget(self.table)
+        self.detailFrame = QFrame(self.content)
+        detailLayout = QVBoxLayout(self.detailFrame)
+        detailLayout.setContentsMargins(0, 8, 0, 0)
+        detailLayout.setSpacing(10)
+        self.detailTitle = SubtitleLabel(self.detailFrame)
+        setFont(self.detailTitle, 22, QFont.Weight.DemiBold)
+        self.detailCopyButton = CopyButton(parent=self.detailFrame)
+        titleRow = QHBoxLayout()
+        titleRow.addWidget(self.detailTitle)
+        titleRow.addWidget(self.detailCopyButton)
+        titleRow.addStretch(1)
+        detailLayout.addLayout(titleRow)
+        # Loading and error messages; the details themselves are the cards below
+        self.detailMessage = QLabel(self.detailFrame)
+        self.detailMessage.setWordWrap(True)
+        detailLayout.addWidget(self.detailMessage)
+        self.details = ParcelDetails(self.detailFrame)
+        self.details.hide()
+        detailLayout.addWidget(self.details)
+        eventsTitle = SubtitleLabel("Eseménynapló", self.detailFrame)
+        setFont(eventsTitle, 16, QFont.Weight.DemiBold)
+        detailLayout.addWidget(eventsTitle)
+        self.eventsList = QListWidget(self.detailFrame)
+        self.eventsList.setMinimumHeight(200)
+        detailLayout.addWidget(self.eventsList)
+        self.detailFrame.hide()
+        self.contentLayout.addWidget(self.detailFrame)
+        self.contentLayout.addStretch(1)
 
-        self.parcels_by_tracking_number: dict[str, dict] = {}
-        self.getCouriers()
-        self.getParcels()
+    def showEvent(self, event) -> None:
+        QFrame.showEvent(self, event)
+        self.refresh()
 
-    def _apply_filters(self, _checked: bool = False) -> None:
-        self.getParcels()
+    def can_load(self) -> bool:
+        if api.is_logged_in and api.role in ("logistician", "admin"):
+            return True
+        self.show_message("Ez a felület raktárosok és adminisztrátorok számára érhető el.")
+        return False
 
-    def getCouriers(self) -> None:
-        run_in_background(
-            api.get,
-            "/warehouse/couriers",
-            on_success=self._on_get_couriers_success,
-            on_error=self._on_get_couriers_error,
-        )
+    # --- loading ---------------------------------------------------------
 
-    def _on_get_couriers_success(self, couriers: list[dict]) -> None:
-        selected_id = self.courierFilter.currentData()
-        self.courierFilter.clear()
-        self.courierFilter.addItem("Minden futár", None)
-        for courier in couriers:
-            self.courierFilter.addItem(
-                f"{courier['first_name']} {courier['last_name']}",
-                courier["id"],
-            )
-        self.courierFilter.setCurrentIndex(
-            max(self.courierFilter.findData(selected_id), 0)
-        )
+    def _apply_filters(self) -> None:
+        self.pager.reset()
+        self.refresh()
 
-    def _on_get_couriers_error(self, error: ApiError) -> None:
-        print(error)
-
-    def getParcels(self) -> None:
-        run_in_background(
-            api.get,
-            "/parcels",
-            params={
-                "limit": 100,
-                "offset": 0,
-                "search": self.searchEdit.text().strip() or None,
-                "status": self.statusFilter.currentData(),
-                "courier_id": self.courierFilter.currentData(),
-            },
-            on_success=self._on_get_parcels_success,
-            on_error=self._on_get_parcels_error,
-        )
-
-    def _on_get_parcels_success(self, result: object) -> None:
-        items = result["items"]
-        self.parcels_by_tracking_number = {
-            item["tracking_number"]: item for item in items
+    def refresh(self) -> None:
+        if not self.can_load():
+            return
+        params = {
+            **self.pager.params(),
+            "search": text_or_none(self.searchEdit),
+            "status": self.statusFilter.currentData(),
+            "courier_id": self.courierFilter.currentData(),
+            "pickup_date": self.pickupDayFilter.value(),
+            "delivery_date": self.deliveryDayFilter.value(),
         }
-        
-        self.table.setRowCount(0)
-        self.table.setRowCount(len(items))
+        self.refreshButton.setEnabled(False)
+        self.show_message("Csomagok betöltése...")
+        run_in_background(_load, params, on_success=self._on_loaded, on_error=self._on_load_error)
 
-        for i, item in enumerate(items):
-            self._set_table_item(i, 0, item["id"])
-            self._set_table_item(i, 1, item["tracking_number"])
-            self._set_table_item(i, 2, item["size"])
-            
-            self._set_table_item(i, 3, item["pickup_date"])
-            self._set_table_item(i, 4, item["pickup_window_start"])
-            self._set_table_item(i, 5, item["pickup_window_end"])
-            
-            self._set_table_item(i, 6, item["delivery_date"])
-            self._set_table_item(i, 7, item["delivery_window_start"])
-            self._set_table_item(i, 8, item["delivery_window_end"])
-            
-            self._set_table_item(
-                i, 9, item["pickup_courier"]["id"] if item["pickup_courier"] is not None else None
-            )
-            self._set_table_item(i, 10, item["picked_up_at"])
-            
-            self._set_table_item(i, 11, item["warehouse_arrived_at"])
-            
-            self._set_table_item(
-                i, 12, item["delivery_courier"]["id"] if item["delivery_courier"] is not None else None
-            )
-            self._set_table_item(i, 13, item["out_for_delivery_at"])
-            self._set_table_item(i, 14, item["delivered_at"])
+    def _on_loaded(self, result: dict) -> None:
+        self.refreshButton.setEnabled(True)
+        keep, self._keep_ids = self._keep_ids or self._selected_ids(), set()
+        self.detail_id = None
+        self.couriers = result["couriers"]
+        chosen = self.courierFilter.currentData()
+        self.courierFilter.clear()
+        self.courierFilter.addItem("Minden futár", userData=None)
+        for courier in self.couriers:
+            self.courierFilter.addItem(full_name(courier), userData=courier["id"])
+        self.courierFilter.setCurrentIndex(max(self.courierFilter.findData(chosen), 0))
 
+        warehouse, inside = result["warehouse"], result["in_warehouse"]
+        percent = inside / warehouse["capacity"] * 100
+        self.warehouseLabel.setText(
+            f"{warehouse['name']}: {inside} / {warehouse['capacity']} csomag a raktárban "
+            f"({percent:.1f} %), szabad hely: {max(warehouse['capacity'] - inside, 0)}"
+        )
+        self.warehouseLabel.setStyleSheet(ERROR_STYLE if percent >= 90 else "")
 
-            self._set_table_item(i, 15, item["status"])
-            
-            
-            
-            #Műveletek
-            widget = QWidget(self.table)
-            layout = QHBoxLayout(widget)
-            layout.setContentsMargins(2, 2, 2, 2)
-            layout.setSpacing(6)
+        page = result["page"]
+        self.parcels = page["items"]
+        self.pager.set_page(page)
+        fill_table(self.table, [
+            [
+                parcel["tracking_number"],
+                STATUS_LABELS.get(parcel["status"], parcel["status"]),
+                parcel["size"],
+                full_name(parcel["sender"]),
+                full_name(parcel["recipient"]),
+                _when(parcel["pickup_date"], parcel["pickup_window_start"], parcel["pickup_window_end"]),
+                _when(parcel["delivery_date"], parcel["delivery_window_start"], parcel["delivery_window_end"]),
+                full_name(parcel["pickup_courier"]),
+                full_name(parcel["delivery_courier"]),
+            ]
+            for parcel in self.parcels
+        ])
+        add_copy_buttons(self.table, 0)
+        self.show_message(f"{page['total']} csomag felel meg a szűrésnek.")
+        # Keep the selection over a reload (e.g. after an operation)
+        flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+        for row, parcel in enumerate(self.parcels):
+            if parcel["id"] in keep:
+                self.table.selectionModel().select(self.table.model().index(row, 0), flags)
+        self._on_selection_changed()
 
-            pickupButton = QPushButton(QIcon(":/icons/package-plus.svg"), "Felvesz")
-            pickupButton.setObjectName("pickup")
-            pickupButton.setIconSize(QSize(16, 16))
-            pickupButton.setStyleSheet(
-                "background-color: #2E7D32; color: white; font-weight: bold;"
-            )
-            
-            deliverButton = QPushButton(QIcon(":/icons/van.svg"), "Kiszállít")
-            deliverButton.setObjectName("deliver")
-            deliverButton.setIconSize(QSize(16, 16))
-            deliverButton.setStyleSheet(
-                "background-color: #1565C0; color: white; font-weight: bold;"
-            )
-            
-            warehouseButton = QPushButton(QIcon(":/icons/warehouse.svg"), "Raktárba")
-            warehouseButton.setObjectName("warehouse")
-            warehouseButton.setIconSize(QSize(16, 16))
-            warehouseButton.setStyleSheet(
-                "background-color: #607D8B; color: white; font-weight: bold;"
-            )
+    def _on_load_error(self, error: ApiError) -> None:
+        self.refreshButton.setEnabled(True)
+        self.show_message(error.message, error=True)
 
+    # --- selection and details -------------------------------------------
 
-            #Raktárban
-            warehouseButton.clicked.connect(
-                lambda checked=False, tracking_number=item["tracking_number"], stat=item["status"], row=i:
-                    self.warehouseParcel(tracking_number, stat, row)
-            )
-            warehouseButton.setEnabled(STATUS_LABELS[item["status"]] == STATUS_LABELS["picked_up"])
+    def _selected(self) -> list[dict]:
+        rows = sorted(index.row() for index in self.table.selectionModel().selectedRows())
+        return [self.parcels[row] for row in rows if row < len(self.parcels)]
 
-            #Kiszállítás
-            deliverButton.clicked.connect(
-                lambda checked=False, tracking_number=item["tracking_number"], row=i:
-                    self.deliverParcel(tracking_number, row)
-            )
-            
-            deliverButton.setEnabled(self._can_assign_delivery(item))
+    def _selected_ids(self) -> set[int]:
+        return {parcel["id"] for parcel in self._selected()}
 
-            
-            #Felvétel
-            pickupButton.clicked.connect(
-                lambda checked=False, tracking_number=item["tracking_number"], row=i:
-                    self.pickupParcel(tracking_number, row)
-            )
-            pickupButton.setEnabled(self._can_assign_pickup(item))
+    def _on_selection_changed(self) -> None:
+        selected = self._selected()
+        statuses = {parcel["status"] for parcel in selected}
+        rules = []
+        for action, (_label, allowed, rule) in ACTIONS.items():
+            enabled = bool(selected) and statuses <= allowed and not self._busy
+            self.actionButtons[action].setEnabled(enabled)
+            if selected and not statuses <= allowed:
+                rules.append(rule)
+        self.selectionLabel.setText(f"{len(selected)} csomag kijelölve" if selected else "Jelölj ki csomagot a művelethez.")
+        self.ruleLabel.setText("\n".join(rules))
+        self.ruleLabel.setVisible(bool(rules))
 
-            
-            
-            layout.addWidget(pickupButton, 1)
-            layout.addWidget(deliverButton, 1)
-            layout.addWidget(warehouseButton, 1)
+        if len(selected) != 1:
+            self.detail_id = None
+            self.detailFrame.hide()
+            return
+        parcel = selected[0]
+        if parcel["id"] == self.detail_id and self.detailFrame.isVisible():
+            return
+        self.detail_id = parcel["id"]
+        self.detailTitle.setText(parcel["tracking_number"])
+        self.detailCopyButton.value = parcel["tracking_number"]
+        set_message(self.detailMessage, "Részletek betöltése...")
+        self.detailMessage.show()
+        self.details.hide()
+        self.eventsList.clear()
+        self.detailFrame.show()
+        run_in_background(api.get, f"/parcels/{parcel['id']}", on_success=self._on_detail_loaded,
+                          on_error=self._on_detail_error)
 
-            self.table.setCellWidget(i, 16, widget)
-            self.table.setRowHeight(i, max(self.table.rowHeight(i), widget.sizeHint().height() + 4))
+    def _on_detail_loaded(self, parcel: dict) -> None:
+        if parcel["id"] != self.detail_id:
+            return
+        self.detailMessage.hide()
+        self.details.set_parcel(parcel)
+        self.details.show()
+        self.eventsList.clear()
+        for event in parcel["events"]:
+            line = f"{format_datetime(event['occurred_at'])} — {STATUS_LABELS.get(event['status'], event['status'])}"
+            if event["courier"]:
+                line += f" · Futár: {full_name(event['courier'])}"
+            line += f" · Rögzítette: {full_name(event['actor']) if event['actor'] else 'vendég'}"
+            if event["note"]:
+                line += f"\n{event['note']}"
+            self.eventsList.addItem(line)
+
+    def _on_detail_error(self, error: ApiError) -> None:
+        set_message(self.detailMessage, error.message, error=True)
+        self.detailMessage.show()
+
+    # --- operations ----------------------------------------------------------
+
+    def _run(self, action: str) -> None:
+        selected = self._selected()
+        if not selected or self._busy:
+            return
+        body = {"tracking_numbers": [parcel["tracking_number"] for parcel in selected]}
+        if action != "check_in":
+            delivery = self._delivery_defaults(selected) if action == "delivery" else None
+            dialog = AssignDialog(self.window(), self.couriers, len(selected), delivery)
+            try:
+                if not dialog.exec():
+                    return
+                body.update(dialog.values())
+            finally:
+                dialog.deleteLater()
+        self._busy = True
+        self._keep_ids = {parcel["id"] for parcel in selected}
+        self._on_selection_changed()
+        run_in_background(_post, ENDPOINTS[action], body, action, len(selected),
+                          on_success=self._on_action_done, on_error=self._on_action_error)
 
     @staticmethod
-    def _can_assign_pickup(parcel: dict) -> bool:
-        return parcel["status"] == "booked" or (
-            parcel["status"] == "pickup_assigned"
-            and date.today() < date.fromisoformat(parcel["pickup_date"])
-        )
+    def _delivery_defaults(selected: list[dict]) -> dict:
+        latest_pickup = max(date.fromisoformat(parcel["pickup_date"]) for parcel in selected)
+        min_date = QDate(max(date.today(), latest_pickup))
+        default, slot = min_date, None
+        if len(selected) == 1 and selected[0]["delivery_date"]:
+            current = QDate.fromString(selected[0]["delivery_date"], "yyyy-MM-dd")
+            default = current if current >= min_date else min_date
+            slot = _slot(selected[0]["delivery_window_start"], selected[0]["delivery_window_end"])
+        return {"min_date": min_date, "date": default, "slot": slot}
 
-    @staticmethod
-    def _can_assign_delivery(parcel: dict) -> bool:
-        return parcel["status"] == "in_warehouse" or (
-            parcel["status"] == "delivery_assigned"
-            and parcel["delivery_date"] is not None
-            and date.today() < date.fromisoformat(parcel["delivery_date"])
-        )
+    def _on_action_done(self, result: tuple[str, int]) -> None:
+        action, count = result
+        self._busy = False
+        self._notify(InfoBar.success, "Sikeres művelet", DONE_MESSAGES[action].format(count))
+        self.refresh()
 
-    def _set_table_item(self, row: int, column: int, value: object) -> None:
-        text = "" if value is None else str(value)
-        self.table.setItem(row, column, QTableWidgetItem(text))
+    def _on_action_error(self, error: ApiError) -> None:
+        self._busy = False
+        self._notify(InfoBar.error, "Sikertelen művelet", error.message)
+        self.refresh()
 
-        
-    def _on_get_parcels_error(self, error: ApiError) -> None:
-        print(error)
-            
-            
-    def warehouseParcel(self, tracking_number: str, parcel_status: str, row: int):
-        if STATUS_LABELS[parcel_status] is not STATUS_LABELS["picked_up"]:
-            return;
-        run_in_background(
-            api.post,
-            "/warehouse/check-in",
-            json={
-                "tracking_numbers": [tracking_number]
-            },
-            on_success=lambda result: self._on_check_in_success(result, row),
-            on_error=self._on_check_in_success_error,
-        )
-        
-    def _on_check_in_success(self, result: object, row: int) -> None:
-        self._update_parcel_row(result[0], row)
-        
-    def _on_check_in_success_error(self, error: ApiError) -> None:
-        print(error)
-    
-    
-
-
-
-    def deliverParcel(self, tracking_number: str, row: int) -> None:
-        parcel = self.parcels_by_tracking_number[tracking_number]
-        if not self._can_assign_delivery(parcel):
-            return
-
-        assignment = showDeliveryAssignModal(self.window(), parcel)
-        if assignment is None:
-            return
-
-        run_in_background(
-            api.post,
-            "/warehouse/assign-delivery",
-            json={
-                **assignment,
-                "tracking_numbers": [tracking_number],
-            },
-            on_success=lambda result: self._on_assign_delivery_success(result, row),
-            on_error=self._on_assign_delivery_error,
-        )
-
-    def _on_assign_delivery_success(self, result: object, row: int) -> None:
-        self._update_parcel_row(result[0], row)
-
-    def _on_assign_delivery_error(self, error: ApiError) -> None:
-        print(error)
-
-    def pickupParcel(self, tracking_number: str, row: int) -> None:
-        parcel = self.parcels_by_tracking_number[tracking_number]
-        if not self._can_assign_pickup(parcel):
-            return
-        
-        courier_id = showCourierAssignModal(self.window())
-        if courier_id == -1:
-            return
-        
-        run_in_background(
-            api.post,
-            "/warehouse/assign-pickup",
-            json={
-                "courier_id" : courier_id,
-                "tracking_numbers": [tracking_number]
-                },
-            on_success=lambda result: self._on_assign_pickup_success(result, row),
-            on_error=self._on_assign_pickup_error
-                                
-            )
-    def _on_assign_pickup_success(self, result: object, row: int) -> None:
-        self._update_parcel_row(result[0], row)
-                
-    def _on_assign_pickup_error(self, error: ApiError) -> None:
-        print(error)
-        
-        
-        
-    def _update_parcel_row(self, item, row) -> None:
-        self.parcels_by_tracking_number[item["tracking_number"]] = item
-        self._set_table_item(row, 3, item["pickup_date"])
-        self._set_table_item(row, 4, item["pickup_window_start"])
-        self._set_table_item(row, 5, item["pickup_window_end"])
-        self._set_table_item(row, 6, item["delivery_date"])
-        self._set_table_item(row, 7, item["delivery_window_start"])
-        self._set_table_item(row, 8, item["delivery_window_end"])
-
-        self._set_table_item(
-            row, 9,
-            item["pickup_courier"]["id"] if item["pickup_courier"] is not None else None
-        )
-
-        self._set_table_item(row, 10, item["picked_up_at"])
-        self._set_table_item(row, 11, item["warehouse_arrived_at"])
-
-        self._set_table_item(
-            row, 12,
-            item["delivery_courier"]["id"] if item["delivery_courier"] is not None else None
-        )
-
-        self._set_table_item(row, 13, item["out_for_delivery_at"])
-        self._set_table_item(row, 14, item["delivered_at"])
-        self._set_table_item(row, 15, item["status"])
-
-        actions = self.table.cellWidget(row, 16)
-        actions.findChild(PushButton, "pickup").setEnabled(
-            self._can_assign_pickup(item)
-        )
-        actions.findChild(PushButton, "deliver").setEnabled(
-            self._can_assign_delivery(item)
-        )
-        actions.findChild(PushButton, "warehouse").setEnabled(
-            item["status"] == "picked_up"
-        )
+    def _notify(self, show, title: str, content: str) -> None:
+        show(title=title, content=content, isClosable=True, position=InfoBarPosition.TOP_RIGHT,
+             duration=6000, parent=self)

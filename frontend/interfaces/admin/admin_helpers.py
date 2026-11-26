@@ -1,8 +1,9 @@
 # Shared building blocks of the admin screens
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QDateEdit,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -13,7 +14,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import BodyLabel, LineEdit, MessageBox, PrimaryPushButton, PushButton, SubtitleLabel, setFont
+from qfluentwidgets import (
+    BodyLabel, CheckBox, LineEdit, MessageBox, PrimaryPushButton, PushButton, SubtitleLabel, setFont,
+)
 
 from api_client import api
 from theme import ACCENT_LIGHT, TEXT, TEXT_SECONDARY
@@ -129,6 +132,27 @@ class Pager(QWidget):
     def _move(self, step: int) -> None:
         self.offset = max(0, self.offset + step)
         self.pageChanged.emit()
+
+
+class DateFilter(QWidget):
+    # Day filter that can be switched off (unchecked: any day)
+    def __init__(self, label: str, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self.check = CheckBox(label, self)
+        self.edit = QDateEdit(self)
+        self.edit.setCalendarPopup(True)
+        self.edit.setDisplayFormat("yyyy-MM-dd")
+        self.edit.setDate(QDate.currentDate())
+        self.edit.setEnabled(False)
+        self.check.toggled.connect(self.edit.setEnabled)
+        layout.addWidget(self.check)
+        layout.addWidget(self.edit)
+
+    def value(self) -> str | None:
+        return self.edit.date().toString("yyyy-MM-dd") if self.check.isChecked() else None
 
 
 def set_message(label: QLabel, text: str, error: bool = False) -> None:
