@@ -121,6 +121,20 @@ def test_courier_steps_in_wrong_status(client, flow, parcel, courier, reached, a
     assert client.post(path, headers=courier.headers).status_code == status
 
 
+def test_wrong_status_message_names_the_status_in_hungarian(client, flow, parcel, courier):
+    flow.to(parcel["id"], "out_for_delivery")
+    response = client.post(f"/courier/parcels/{parcel['tracking_number']}/start", headers=courier.headers)
+    assert response.status_code == 409
+    assert "(Kiszállítás alatt)" in response.json()["detail"]
+    assert "out_for_delivery" not in response.json()["detail"]
+
+
+def test_every_status_has_a_hungarian_label():
+    from server.models import ParcelStatus
+    labels = [status.label for status in ParcelStatus]
+    assert all(labels) and len(set(labels)) == len(labels)
+
+
 def test_logistician_cannot_reassign_pickup_after_pickup(client, flow, parcel, logistician, make_actor):
     other = make_actor(UserRole.COURIER)
     flow.to(parcel["id"], "picked_up")

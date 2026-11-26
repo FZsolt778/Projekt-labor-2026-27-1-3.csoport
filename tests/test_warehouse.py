@@ -17,7 +17,9 @@ def test_check_in_is_all_or_nothing(client, flow, book, logistician):
     flow.to(ready["id"], "picked_up")
     response = check_in(client, logistician, ready, not_ready)
     assert response.status_code == 409
-    assert f"{not_ready['tracking_number']} (booked)" in response.json()["detail"]
+    # The status is named in Hungarian, not with its code
+    assert f"{not_ready['tracking_number']} (Előjegyezve)" in response.json()["detail"]
+    assert "booked" not in response.json()["detail"]
     assert ready["tracking_number"] not in response.json()["detail"]
     # Nothing changed
     assert flow.get(ready["id"])["status"] == "picked_up"
