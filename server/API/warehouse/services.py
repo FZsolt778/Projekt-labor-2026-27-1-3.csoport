@@ -12,15 +12,10 @@ from server.email.notifications import (
     notify_pickup_assigned,
 )
 
-# Bulk ops: validate every parcel first, then modify (all or nothing):
-# unknown tracking number → 404, wrong status → 409
-
-# Physically in the warehouse (also used by stat)
 IN_WAREHOUSE_STATUSES = frozenset({ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED})
 
 
 def _load_parcels(db: Session, tracking_numbers: list[str]) -> list[Parcel]:
-    # Locked rows in request order, unknown tracking number → 404 (the schema already normalized them)
     parcels = db.scalars(
         select(Parcel).where(Parcel.tracking_number.in_(tracking_numbers)).with_for_update()
     ).all()
@@ -35,10 +30,9 @@ def _load_parcels(db: Session, tracking_numbers: list[str]) -> list[Parcel]:
 
 
 def _require_statuses(parcels: list[Parcel], *allowed: ParcelStatus) -> None:
-    # 409 listing every parcel not in allowed
     wrong = [parcel for parcel in parcels if parcel.status not in allowed]
     if wrong:
-        details = ", ".join(f"{p.tracking_number} ({ParcelStatus(p.status).value})" for p in wrong)
+        details = ", ".join(f"{p.tracking_number} ({ParcelStatus(p.status).label})" for p in wrong)
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"Ezek a csomagok jelenlegi állapotukban nem kezelhetők így: {details}",
@@ -46,7 +40,6 @@ def _require_statuses(parcels: list[Parcel], *allowed: ParcelStatus) -> None:
 
 
 def get_warehouse(db: Session) -> Warehouse:
-    # The single warehouse (lowest id)
     warehouse = db.scalar(select(Warehouse).order_by(Warehouse.id).limit(1))
     if warehouse is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Nincs raktár, futtasd a seed szkriptet")
@@ -78,7 +71,6 @@ def update_warehouse(db: Session, data: WarehouseUpdate) -> Warehouse:
 
 
 def list_couriers(db: Session) -> list[User]:
-    # Active couriers, the logistician picks from these
     return list(db.scalars(
         select(User)
         .where(User.role == UserRole.COURIER, User.is_active.is_(True))
@@ -96,7 +88,6 @@ def check_in(
     _require_statuses(parcels, ParcelStatus.PICKED_UP, ParcelStatus.FAILED)
 
     warehouse = get_warehouse(db)
-    # Lock serializes concurrent check-ins for the capacity check
     db.refresh(warehouse, with_for_update=True)
     current = count_in_warehouse(db, warehouse.id)
     if current + len(parcels) > warehouse.capacity:
@@ -110,7 +101,6 @@ def check_in(
         if parcel.status == ParcelStatus.PICKED_UP:
             courier_id = parcel.pickup_courier_id
         else:
-            # Failed delivery, the courier brought it back
             courier_id = parcel.delivery_courier_id
             parcel.delivery_courier_id = None
         parcel.warehouse_id = warehouse.id
@@ -131,7 +121,6 @@ def assign_pickup(
 ) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
     parcels = _load_parcels(db, data.tracking_numbers)
-    # Locked after pickup
     _require_statuses(parcels, ParcelStatus.BOOKED, ParcelStatus.PICKUP_ASSIGNED)
 
     newly_assigned: list[Parcel] = []
@@ -156,7 +145,6 @@ def assign_delivery(
 ) -> list[Parcel]:
     courier = get_courier_or_404(db, data.courier_id)
     parcels = _load_parcels(db, data.tracking_numbers)
-    # Locked after the courier started
     _require_statuses(parcels, ParcelStatus.IN_WAREHOUSE, ParcelStatus.DELIVERY_ASSIGNED)
 
     too_early = [p.tracking_number for p in parcels if data.delivery_date < p.pickup_date]

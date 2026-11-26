@@ -69,7 +69,7 @@ def require_status(parcel: Parcel, *allowed: ParcelStatus) -> None:
     if parcel.status not in allowed:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"A csomag jelenlegi állapotában ({ParcelStatus(parcel.status).value}) ez a művelet nem lehetséges",
+            f"A csomag jelenlegi állapotában ({ParcelStatus(parcel.status).label}) ez a művelet nem lehetséges",
         )
 
 

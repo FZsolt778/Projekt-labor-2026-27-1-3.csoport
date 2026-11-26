@@ -1,8 +1,9 @@
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from server.models import Parcel, ParcelEvent, ParcelSize, ParcelStatus, User, UserRole
+from server.src.localtime import day_start_utc, local_date
 from server.API.user.schemas import UserSummary
 from server.API.warehouse.services import IN_WAREHOUSE_STATUSES, get_warehouse
 from server.API.stat.schemas import (
@@ -10,8 +11,6 @@ from server.API.stat.schemas import (
     WarehouseUtilization, WarehouseUtilizationHistory,
 )
 
-# Aggregation runs in Python on filtered rows, so it works on any DB
-# Percentages and averages rounded to 1 decimal
 
 COURIER_STATUSES = (ParcelStatus.PICKED_UP, ParcelStatus.DELIVERED, ParcelStatus.FAILED)
 
@@ -21,11 +20,7 @@ def _days(from_date: date, to_date: date) -> list[date]:
 
 
 def _range_bounds(params: StatsRangeParams) -> tuple[datetime, datetime]:
-    # [from_date 00:00, to_date + 1 00:00)
-    return (
-        datetime.combine(params.from_date, time.min),
-        datetime.combine(params.to_date + timedelta(days=1), time.min),
-    )
+    return day_start_utc(params.from_date), day_start_utc(params.to_date + timedelta(days=1))
 
 
 def _percent(count: int, capacity: int) -> float:
@@ -56,9 +51,6 @@ def warehouse_utilization(db: Session) -> WarehouseUtilization:
 
 
 def warehouse_history(db: Session, params: StatsRangeParams) -> WarehouseUtilizationHistory:
-    # Replays the event log: a parcel is inside at end of day if its last event by then
-    # has a status in IN_WAREHOUSE_STATUSES (milestones are overwritten on retries, events are not).
-    # Percentages use the current capacity, its history is not stored.
     warehouse = get_warehouse(db)
     _, end = _range_bounds(params)
     events = db.execute(
@@ -73,7 +65,7 @@ def warehouse_history(db: Session, params: StatsRangeParams) -> WarehouseUtiliza
     index = 0
     points = []
     for day in _days(params.from_date, params.to_date):
-        day_end = datetime.combine(day + timedelta(days=1), time.min)
+        day_end = day_start_utc(day + timedelta(days=1))
         while index < len(events) and events[index].occurred_at < day_end:
             parcel_id, new_status, _ = events[index]
             was_inside = last_status.get(parcel_id) in IN_WAREHOUSE_STATUSES
@@ -109,11 +101,9 @@ def courier_stats(db: Session, params: StatsRangeParams) -> CourierStatsReport:
     in_range = and_(
         ParcelEvent.occurred_at >= start,
         ParcelEvent.occurred_at < end,
-        # Courier's own actions only, admin swaps are excluded
         ParcelEvent.actor_id == ParcelEvent.courier_id,
     )
 
-    # courier_id → day → [pickups, deliveries, failed]
     per_courier: dict[int, dict[date, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
     totals: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0])
     column = {ParcelStatus.PICKED_UP: 0, ParcelStatus.DELIVERED: 1, ParcelStatus.FAILED: 2}
@@ -122,10 +112,10 @@ def courier_stats(db: Session, params: StatsRangeParams) -> CourierStatsReport:
         .where(in_range, ParcelEvent.status.in_(COURIER_STATUSES))
     ):
         col = column[ParcelStatus(event_status)]
-        per_courier[courier_id][occurred_at.date()][col] += 1
-        totals[occurred_at.date()][col] += 1
+        day = local_date(occurred_at)
+        per_courier[courier_id][day][col] += 1
+        totals[day][col] += 1
 
-    # Delivery times of parcels delivered in the range, from the final milestones
     delivery_minutes: dict[int, list[float]] = defaultdict(list)
     lead_hours: dict[int, list[float]] = defaultdict(list)
     for courier_id, picked_up_at, out_at, delivered_at in db.execute(
@@ -140,7 +130,6 @@ def courier_stats(db: Session, params: StatsRangeParams) -> CourierStatsReport:
         if picked_up_at is not None:
             lead_hours[courier_id].append((delivered_at - picked_up_at).total_seconds() / 3600)
 
-    # Active couriers, plus anyone with courier events in the range
     couriers = db.scalars(
         select(User)
         .where(or_(
