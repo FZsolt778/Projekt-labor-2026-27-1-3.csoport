@@ -374,13 +374,16 @@ class LogisticianInterface(AdminPage):
             return
         sender, recipient = parcel["sender"], parcel["recipient"]
         lines = [
-            f"{STATUS_LABELS.get(parcel['status'], parcel['status'])} · Méret: {parcel['size']}",
-            f"Feladó: {full_name(sender)}, {_address(sender)}, {sender.get('phone') or 'nincs telefonszám'}",
-            f"Címzett: {full_name(recipient)}, {_address(recipient)}, {recipient.get('phone') or 'nincs telefonszám'}",
+            f"{STATUS_LABELS.get(parcel['status'], parcel['status'])} \nMéret: {parcel['size']}",
+            f"Feladó: {full_name(sender)}, {_address(sender)}, \n{sender.get('phone') or 'nincs telefonszám'}",
+            f"Címzett: {full_name(recipient)}, {_address(recipient)}, \n{recipient.get('phone') or 'nincs telefonszám'}",
+            f"\n",
             f"Felvétel: {_when(parcel['pickup_date'], parcel['pickup_window_start'], parcel['pickup_window_end'])}"
-            f" · futár: {full_name(parcel['pickup_courier'])}",
+            f"\nfutár: {full_name(parcel['pickup_courier'])}",
+            f"\n",
             f"Kiszállítás: {_when(parcel['delivery_date'], parcel['delivery_window_start'], parcel['delivery_window_end'])}"
-            f" · futár: {full_name(parcel['delivery_courier'])}",
+            f"\nfutár: {full_name(parcel['delivery_courier'])}",
+            f"\n",
         ]
         milestones = [("Felvéve", parcel["picked_up_at"]), ("Raktárba érkezett", parcel["warehouse_arrived_at"]),
                       ("Kiszállításra indult", parcel["out_for_delivery_at"]), ("Kézbesítve", parcel["delivered_at"])]
@@ -394,7 +397,7 @@ class LogisticianInterface(AdminPage):
             line = f"{format_datetime(event['occurred_at'])} — {STATUS_LABELS.get(event['status'], event['status'])}"
             if event["courier"]:
                 line += f" · Futár: {full_name(event['courier'])}"
-            line += f" · Rögzítette: {full_name(event['actor']) if event['actor'] else 'vendég'}"
+            line += f"Rögzítette: {full_name(event['actor']) if event['actor'] else 'vendég'}"
             if event["note"]:
                 line += f"\n{event['note']}"
             self.eventsList.addItem(line)
