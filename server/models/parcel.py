@@ -31,6 +31,23 @@ class ParcelStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+    @property
+    def label(self) -> str:
+        return STATUS_LABELS[self]
+
+
+STATUS_LABELS = {
+    ParcelStatus.BOOKED: "Előjegyezve",
+    ParcelStatus.PICKUP_ASSIGNED: "Felvételre kiosztva",
+    ParcelStatus.PICKED_UP: "Felvéve",
+    ParcelStatus.IN_WAREHOUSE: "Raktárban",
+    ParcelStatus.DELIVERY_ASSIGNED: "Kiszállításra kiosztva",
+    ParcelStatus.OUT_FOR_DELIVERY: "Kiszállítás alatt",
+    ParcelStatus.DELIVERED: "Kézbesítve",
+    ParcelStatus.FAILED: "Sikertelen kísérlet",
+    ParcelStatus.CANCELLED: "Lemondva",
+}
+
 class Parcel(Base):
     __tablename__ = "parcels"
 

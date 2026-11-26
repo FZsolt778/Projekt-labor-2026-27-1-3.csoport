@@ -1,9 +1,19 @@
+<<<<<<< Updated upstream
 from datetime import date, datetime, time, timedelta
+<<<<<<< Updated upstream
 from fastapi import BackgroundTasks, HTTPException, status
+=======
+from fastapi import HTTPException, status
+=======
+from datetime import date, time, timedelta
+from fastapi import BackgroundTasks, HTTPException, status
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from server.models import Parcel, ParcelEvent, ParcelStatus, User
 from server.src.config import settings
+from server.src.localtime import day_start_utc, local_today
 from server.API.contact.schemas import ContactRead
 from server.API.parcel.schemas import ParcelRead
 from server.API.parcel.services import add_event, get_by_tracking_number, require_status
@@ -187,9 +197,10 @@ def _history_task(event: ParcelEvent) -> CourierTaskType:
 
 
 def get_history(db: Session, courier: User, params: CourierHistoryParams) -> CourierHistory:
-    from_date, to_date = params.period.bounds(params.day or date.today())
-    start = datetime.combine(from_date, time.min)
-    end = datetime.combine(to_date + timedelta(days=1), time.min)
+    from_date, to_date = params.period.bounds(params.day or local_today())
+    # Local day boundaries (the event times are UTC)
+    start = day_start_utc(from_date)
+    end = day_start_utc(to_date + timedelta(days=1))
 
     # Courier's own events only, admin swaps are excluded
     events = db.scalars(
