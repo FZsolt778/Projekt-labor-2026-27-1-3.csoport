@@ -17,6 +17,7 @@ from qfluentwidgets import (
 
 from api_client import STATUS_LABELS, TASK_LABELS, ApiError, api, format_date, format_window, run_in_background
 from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
 from ..admin.admin_helpers import create_table, selected_row
 from .courier_actions import (
     ACTION_LABELS,
@@ -159,9 +160,6 @@ class TasksInterface(QFrame):
         titleRow.addWidget(self.detailCopyButton)
         titleRow.addStretch(1)
         self.detailLayout.addLayout(titleRow)
-        self.detailLabel = QLabel(self.detailFrame)
-        self.detailLabel.setWordWrap(True)
-        self.detailLayout.addWidget(self.detailLabel)
         self.hintLabel = QLabel(self.detailFrame)
         self.hintLabel.setWordWrap(True)
         self.hintLabel.setStyleSheet(MUTED_STYLE)
@@ -177,6 +175,9 @@ class TasksInterface(QFrame):
             self.actionButtons[action] = button
         actions.addStretch(1)
         self.detailLayout.addLayout(actions)
+        # Under the buttons, so the courier reaches them without scrolling
+        self.details = ParcelDetails(self.detailFrame)
+        self.detailLayout.addWidget(self.details)
         self.detailFrame.hide()
         self.contentLayout.addWidget(self.detailFrame)
         self.contentLayout.addStretch(1)
@@ -276,20 +277,11 @@ class TasksInterface(QFrame):
         self._show_detail(task)
 
     def _show_detail(self, task: dict) -> None:
-        parcel, contact = task["parcel"], _contact(task)
-        pickup = task["task"] == "pickup"
-        other = parcel["recipient"] if pickup else parcel["sender"]
+        parcel = task["parcel"]
         self.detailTitle.setText(parcel["tracking_number"])
         self.detailCopyButton.value = parcel["tracking_number"]
-        self.detailLabel.setText(
-            f''
-            f'{STATUS_LABELS.get(parcel["status"], parcel["status"])}\nMéret: {parcel["size"]}\n'
-            f'{"Feladó" if pickup else "Címzett"}: {_name(contact)}, '
-            f'\nTelefon: {contact.get("phone") or "–"},\nEmail: {contact["email"]}\n'
-            f"Cím: {_address(contact)}\n"
-            f"Időpont: {_when(task)}\n"
-            f'{"Címzett" if pickup else "Feladó"}: {_name(other)}, {other["city"]}'
-        )
+        # The address the courier goes to is marked
+        self.details.set_parcel(parcel, highlight="sender" if task["task"] == "pickup" else "recipient")
         actions = available_actions(task["task"], parcel["status"])
         hint = waiting_hint(task["task"], parcel["status"])
         if not actions and not hint:

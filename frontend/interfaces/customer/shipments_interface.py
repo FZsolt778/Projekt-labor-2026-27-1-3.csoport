@@ -34,7 +34,8 @@ from api_client import (
     run_in_background,
     api,
 )
-from components.copy_button import add_copy_buttons
+from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
 from ..admin.admin_helpers import confirm
 from .parcel_helpers import load_my_parcels
 
@@ -122,12 +123,17 @@ class ShipmentsInterface(QFrame):
         self.editorLayout = QVBoxLayout(self.editorFrame)
         self.editorLayout.setContentsMargins(0, 8, 0, 0)
         self.editorLayout.setSpacing(10)
+        # Title: the tracking number with a copy button, then the detail cards
         self.editorTitle = SubtitleLabel("Csomag adatai", self.editorFrame)
         setFont(self.editorTitle, 20, QFont.Weight.DemiBold)
-        self.editorLayout.addWidget(self.editorTitle)
-        self.detailsLabel = QLabel(self.editorFrame)
-        self.detailsLabel.setWordWrap(True)
-        self.editorLayout.addWidget(self.detailsLabel)
+        self.editorCopyButton = CopyButton(parent=self.editorFrame)
+        titleRow = QHBoxLayout()
+        titleRow.addWidget(self.editorTitle)
+        titleRow.addWidget(self.editorCopyButton)
+        titleRow.addStretch(1)
+        self.editorLayout.addLayout(titleRow)
+        self.details = ParcelDetails(self.editorFrame)
+        self.editorLayout.addWidget(self.details)
         self.editorMessage = QLabel(self.editorFrame)
         self.editorMessage.setWordWrap(True)
         self.editorLayout.addWidget(self.editorMessage)
@@ -273,25 +279,9 @@ class ShipmentsInterface(QFrame):
         self.current_parcel = parcel
         self.editorFrame.show()
         sender = parcel["sender"]
-        recipient = parcel["recipient"]
-        pickup = (
-            f'{format_date(parcel["pickup_date"])} '
-            f'({format_window(parcel["pickup_window_start"], parcel["pickup_window_end"])})'
-        )
-        delivery = (
-            f'{format_date(parcel["delivery_date"])} '
-            f'({format_window(parcel["delivery_window_start"], parcel["delivery_window_end"])})'
-        )
-        self.detailsLabel.setText(
-            f"Csomagazonosító: {parcel['tracking_number']}\n"
-            f"Állapot: {STATUS_LABELS.get(parcel['status'], parcel['status'])} · "
-            f"Méret: {parcel['size']}\n"
-            f"Feladó: {sender['last_name']} {sender['first_name']}\n"
-            f"Címzett: {recipient['last_name']} {recipient['first_name']}\n"
-            f"Cím: {recipient['postal_code']} {recipient['city']}, "
-            f"{recipient['street']} {recipient['house_number']}\n"
-            f"Felvétel: {pickup}\nKiszállítás: {delivery}"
-        )
+        self.editorTitle.setText(parcel["tracking_number"])
+        self.editorCopyButton.value = parcel["tracking_number"]
+        self.details.set_parcel(parcel)
         status = parcel["status"]
         editable = (
             direction == "sent"
@@ -316,10 +306,7 @@ class ShipmentsInterface(QFrame):
         self.editForm.show()
         self.saveButton.show()
         self.cancelButton.show()
-        self.editorMessage.setText(
-            f"Az előjegyzett csomag a felvétel előtti napig módosítható vagy lemondható. "
-            f"Azonosító: {parcel['tracking_number']}"
-        )
+        self.editorMessage.setText("Az előjegyzett csomag a felvétel előtti napig módosítható vagy lemondható.")
         self.sizeCombo.setCurrentText(parcel["size"])
         self.pickupDate.setDate(
             QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd")

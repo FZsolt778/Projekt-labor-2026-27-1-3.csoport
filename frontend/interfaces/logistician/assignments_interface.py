@@ -28,6 +28,7 @@ from api_client import (
     run_in_background,
 )
 from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
 from ..admin.admin_helpers import (
     ERROR_STYLE,
     MUTED_STYLE,
@@ -41,9 +42,7 @@ from ..admin.admin_helpers import (
     text_or_none,
 )
 
-# Physically in the warehouse, the server counts the same against the capacity
 IN_WAREHOUSE_STATUSES = ("in_warehouse", "delivery_assigned")
-# What the server accepts for each operation (warehouse services)
 ACTIONS = {
     "check_in": ("Beérkeztetés", {"picked_up", "failed"},
                  ""),
@@ -81,12 +80,9 @@ def _when(day: str | None, start: str | None, end: str | None) -> str:
 
 
 def _slot(start: str | None, end: str | None) -> str | None:
-    # "08:00:00", "10:00:00" -> "08:00-10:00", the form of the request
     return f"{start[:5]}-{end[:5]}" if start and end else None
 
 
-def _address(contact: dict) -> str:
-    return f"{contact['postal_code']} {contact['city']}, {contact['street']} {contact['house_number']}"
 
 
 class AssignDialog(MessageBoxBase):
@@ -114,7 +110,6 @@ class AssignDialog(MessageBoxBase):
         self.deliveryDate: QDateEdit | None = None
         self.deliverySlot: ComboBox | None = None
         if delivery is not None:
-            # Not in the past and not before the latest pickup of the chosen parcels (server rule)
             self.deliveryDate = QDateEdit(self.widget)
             self.deliveryDate.setCalendarPopup(True)
             self.deliveryDate.setDisplayFormat("yyyy-MM-dd")
@@ -159,7 +154,6 @@ class LogisticianInterface(AdminPage):
         self._keep_ids: set[int] = set()
         self._busy = False
 
-        # The warehouse and its load (F-20)
         self.warehouseLabel = QLabel(self.content)
         setFont(self.warehouseLabel, 15, QFont.Weight.DemiBold)
         self.contentLayout.insertWidget(2, self.warehouseLabel)
@@ -224,7 +218,6 @@ class LogisticianInterface(AdminPage):
         self.pager.pageChanged.connect(self.refresh)
         self.contentLayout.addWidget(self.pager)
 
-        # Details of a single selected parcel, with the event log (F-15)
         self.detailFrame = QFrame(self.content)
         detailLayout = QVBoxLayout(self.detailFrame)
         detailLayout.setContentsMargins(0, 8, 0, 0)
@@ -237,9 +230,13 @@ class LogisticianInterface(AdminPage):
         titleRow.addWidget(self.detailCopyButton)
         titleRow.addStretch(1)
         detailLayout.addLayout(titleRow)
-        self.detailLabel = QLabel(self.detailFrame)
-        self.detailLabel.setWordWrap(True)
-        detailLayout.addWidget(self.detailLabel)
+        # Loading and error messages; the details themselves are the cards below
+        self.detailMessage = QLabel(self.detailFrame)
+        self.detailMessage.setWordWrap(True)
+        detailLayout.addWidget(self.detailMessage)
+        self.details = ParcelDetails(self.detailFrame)
+        self.details.hide()
+        detailLayout.addWidget(self.details)
         eventsTitle = SubtitleLabel("Eseménynapló", self.detailFrame)
         setFont(eventsTitle, 16, QFont.Weight.DemiBold)
         detailLayout.addWidget(eventsTitle)
@@ -363,7 +360,9 @@ class LogisticianInterface(AdminPage):
         self.detail_id = parcel["id"]
         self.detailTitle.setText(parcel["tracking_number"])
         self.detailCopyButton.value = parcel["tracking_number"]
-        self.detailLabel.setText("Részletek betöltése...")
+        set_message(self.detailMessage, "Részletek betöltése...")
+        self.detailMessage.show()
+        self.details.hide()
         self.eventsList.clear()
         self.detailFrame.show()
         run_in_background(api.get, f"/parcels/{parcel['id']}", on_success=self._on_detail_loaded,
@@ -372,38 +371,22 @@ class LogisticianInterface(AdminPage):
     def _on_detail_loaded(self, parcel: dict) -> None:
         if parcel["id"] != self.detail_id:
             return
-        sender, recipient = parcel["sender"], parcel["recipient"]
-        lines = [
-            f"{STATUS_LABELS.get(parcel['status'], parcel['status'])} \nMéret: {parcel['size']}",
-            f"Feladó: {full_name(sender)}, {_address(sender)}, \n{sender.get('phone') or 'nincs telefonszám'}",
-            f"Címzett: {full_name(recipient)}, {_address(recipient)}, \n{recipient.get('phone') or 'nincs telefonszám'}",
-            f"\n",
-            f"Felvétel: {_when(parcel['pickup_date'], parcel['pickup_window_start'], parcel['pickup_window_end'])}"
-            f"\nfutár: {full_name(parcel['pickup_courier'])}",
-            f"\n",
-            f"Kiszállítás: {_when(parcel['delivery_date'], parcel['delivery_window_start'], parcel['delivery_window_end'])}"
-            f"\nfutár: {full_name(parcel['delivery_courier'])}",
-            f"\n",
-        ]
-        milestones = [("Felvéve", parcel["picked_up_at"]), ("Raktárba érkezett", parcel["warehouse_arrived_at"]),
-                      ("Kiszállításra indult", parcel["out_for_delivery_at"]), ("Kézbesítve", parcel["delivered_at"])]
-        done = [f"{label}: {format_datetime(value)}" for label, value in milestones if value]
-        if done:
-            lines.append(" · ".join(done))
-        # Also resets the error colour of an earlier failed load
-        set_message(self.detailLabel, "\n".join(lines))
+        self.detailMessage.hide()
+        self.details.set_parcel(parcel)
+        self.details.show()
         self.eventsList.clear()
         for event in parcel["events"]:
             line = f"{format_datetime(event['occurred_at'])} — {STATUS_LABELS.get(event['status'], event['status'])}"
             if event["courier"]:
                 line += f" · Futár: {full_name(event['courier'])}"
-            line += f"Rögzítette: {full_name(event['actor']) if event['actor'] else 'vendég'}"
+            line += f" · Rögzítette: {full_name(event['actor']) if event['actor'] else 'vendég'}"
             if event["note"]:
                 line += f"\n{event['note']}"
             self.eventsList.addItem(line)
 
     def _on_detail_error(self, error: ApiError) -> None:
-        set_message(self.detailLabel, error.message, error=True)
+        set_message(self.detailMessage, error.message, error=True)
+        self.detailMessage.show()
 
     # --- operations ----------------------------------------------------------
 
@@ -432,7 +415,6 @@ class LogisticianInterface(AdminPage):
         latest_pickup = max(date.fromisoformat(parcel["pickup_date"]) for parcel in selected)
         min_date = QDate(max(date.today(), latest_pickup))
         default, slot = min_date, None
-        # A single, already scheduled parcel keeps its time as the starting point
         if len(selected) == 1 and selected[0]["delivery_date"]:
             current = QDate.fromString(selected[0]["delivery_date"], "yyyy-MM-dd")
             default = current if current >= min_date else min_date
@@ -447,7 +429,6 @@ class LogisticianInterface(AdminPage):
 
     def _on_action_error(self, error: ApiError) -> None:
         self._busy = False
-        # The server names every parcel that blocked the operation
         self._notify(InfoBar.error, "Sikertelen művelet", error.message)
         self.refresh()
 

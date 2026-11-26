@@ -24,7 +24,8 @@ from api_client import (
     format_window,
     run_in_background,
 )
-from components.copy_button import add_copy_buttons
+from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
 from .parcel_helpers import load_my_parcels
 
 
@@ -93,6 +94,24 @@ class ShipHistoryInterface(QFrame):
         )
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
+        # The selected parcel: tracking number with a copy button, then the detail cards
+        self.detailFrame = QWidget(self.content)
+        detailLayout = QVBoxLayout(self.detailFrame)
+        detailLayout.setContentsMargins(0, 8, 0, 0)
+        detailLayout.setSpacing(10)
+        self.detailTitle = SubtitleLabel(self.detailFrame)
+        setFont(self.detailTitle, 20, QFont.Weight.DemiBold)
+        self.detailCopyButton = CopyButton(parent=self.detailFrame)
+        titleRow = QHBoxLayout()
+        titleRow.addWidget(self.detailTitle)
+        titleRow.addWidget(self.detailCopyButton)
+        titleRow.addStretch(1)
+        detailLayout.addLayout(titleRow)
+        self.details = ParcelDetails(self.detailFrame)
+        detailLayout.addWidget(self.details)
+        self.detailFrame.hide()
+        self.contentLayout.addWidget(self.detailFrame)
+
         self.timelineTitle = SubtitleLabel("Csomag eseményei", self.content)
         setFont(self.timelineTitle, 20, QFont.Weight.DemiBold)
         self.contentLayout.addWidget(self.timelineTitle)
@@ -144,6 +163,7 @@ class ShipHistoryInterface(QFrame):
         total = len(parcels["sent"]) + len(parcels["received"])
         self.messageLabel.setText(f"{total} lezárt csomag található az előzményekben.")
         self.timelineList.clear()
+        self.detailFrame.hide()
 
     def _on_load_error(self, error: ApiError) -> None:
         self.refreshButton.setEnabled(True)
@@ -198,10 +218,15 @@ class ShipHistoryInterface(QFrame):
         else:
             self.selected_parcel_id = None
             self.timelineList.clear()
+            self.detailFrame.hide()
 
     def _on_parcel_detail_loaded(self, parcel_id: int, parcel: dict) -> None:
         if parcel_id != self.selected_parcel_id:
             return
+        self.detailTitle.setText(parcel["tracking_number"])
+        self.detailCopyButton.value = parcel["tracking_number"]
+        self.details.set_parcel(parcel)
+        self.detailFrame.show()
         events = parcel.get("events", [])
         if not events:
             self.timelineList.addItem("Ehhez a csomaghoz nincs rögzített esemény.")

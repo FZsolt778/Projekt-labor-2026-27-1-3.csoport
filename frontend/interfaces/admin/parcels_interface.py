@@ -1,5 +1,5 @@
 # Admin: all parcels, details with the event log, edit, courier change, cancel, delete
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, QSize
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDateEdit,
@@ -8,11 +8,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import CheckBox, ComboBox, LineEdit, PrimaryPushButton, PushButton, SubtitleLabel, setFont
+from qfluentwidgets import ComboBox, LineEdit, PrimaryPushButton, PushButton, SubtitleLabel, setFont
 
 from api_client import (
     SIZES,
@@ -26,6 +27,7 @@ from api_client import (
     run_in_background,
 )
 from components.copy_button import CopyButton, add_copy_buttons
+from components.parcel_details import ParcelDetails
 from .admin_helpers import (
     FORM_MAX_WIDTH,
     MUTED_STYLE,
@@ -74,12 +76,15 @@ def _when(day: str | None, start: str | None, end: str | None) -> str:
     return f"{format_date(day)} ({format_window(start, end)})" if day else "nincs megadva"
 
 
-def _contact_line(contact: dict) -> str:
-    phone = f", {contact['phone']}" if contact["phone"] else ""
-    return (
-        f"{full_name(contact)} ({contact['email']}{phone}), "
-        f"{contact['postal_code']} {contact['city']}, {contact['street']} {contact['house_number']}"
-    )
+
+
+NO_DELIVERY_TEXT = "nincs megadva"
+
+
+class FitTabWidget(QTabWidget):
+    # QTabWidget.sizeHint takes the tallest page; this follows the visible one (see _fit_data_tabs)
+    def sizeHint(self) -> QSize:
+        return QSize(super().sizeHint().width(), self.minimumSizeHint().height())
 
 
 class ParcelsInterface(AdminPage):
@@ -152,9 +157,10 @@ class ParcelsInterface(AdminPage):
         self.detailMessage = QLabel(self.detailFrame)
         self.detailMessage.setWordWrap(True)
         self.detailLayout.addWidget(self.detailMessage)
-        self.detailsLabel = QLabel(self.detailFrame)
-        self.detailsLabel.setWordWrap(True)
-        self.detailLayout.addWidget(self.detailsLabel)
+        # The summary of the parcel (status, milestones, sender, recipient, couriers)
+        self.details = ParcelDetails(self.detailFrame)
+        self.details.hide()
+        self.detailLayout.addWidget(self.details)
 
         self._build_data_section()
         self._build_courier_section()
@@ -186,7 +192,7 @@ class ParcelsInterface(AdminPage):
 
     def _build_data_section(self) -> None:
         self._add_section_title("Adatok")
-        self.dataTabs = QTabWidget(self.detailFrame)
+        self.dataTabs = FitTabWidget(self.detailFrame)
 
         parcelTab = QWidget()
         form = QFormLayout(parcelTab)
@@ -195,27 +201,26 @@ class ParcelsInterface(AdminPage):
         self.pickupDate = self._date_edit(parcelTab)
         self.pickupSlot = ComboBox(parcelTab)
         self.pickupSlot.addItems(TIME_SLOTS)
-        self.deliveryCheck = CheckBox("Kiszállítási időpont megadása", parcelTab)
+        # No delivery time yet: the day shows "nincs megadva" (its minimum date) and the slot is empty;
+        # picking a day and a slot sets the time
         self.deliveryDate = self._date_edit(parcelTab)
+        self.deliveryDate.setSpecialValueText(NO_DELIVERY_TEXT)
         self.deliverySlot = ComboBox(parcelTab)
         self.deliverySlot.addItems(TIME_SLOTS)
-        self.deliveryCheck.toggled.connect(self.deliveryDate.setEnabled)
-        self.deliveryCheck.toggled.connect(self.deliverySlot.setEnabled)
+        self.deliverySlot.setPlaceholderText(NO_DELIVERY_TEXT)
+        self.deliverySlot.setCurrentIndex(-1)
+        self.clearDeliveryButton = PushButton("Időpont törlése", parcelTab)
+        self.clearDeliveryButton.clicked.connect(self._clear_delivery)
+        self.deliveryDate.dateChanged.connect(self._update_clear_button)
+        self.deliverySlot.currentIndexChanged.connect(self._update_clear_button)
+        deliverySlotRow = QHBoxLayout()
+        deliverySlotRow.addWidget(self.deliverySlot, 1)
+        deliverySlotRow.addWidget(self.clearDeliveryButton)
         form.addRow("Méret", self.sizeCombo)
         form.addRow("Felvétel napja", self.pickupDate)
         form.addRow("Felvételi idősáv", self.pickupSlot)
-        form.addRow("", self.deliveryCheck)
         form.addRow("Kiszállítás napja", self.deliveryDate)
-        form.addRow("Kiszállítási idősáv", self.deliverySlot)
-        self.deliveryHint = QLabel(
-            ""
-            ""
-            "",
-            parcelTab,
-        )
-        self.deliveryHint.setWordWrap(True)
-        self.deliveryHint.setStyleSheet(MUTED_STYLE)
-        form.addRow("", self.deliveryHint)
+        form.addRow("Kiszállítási idősáv", deliverySlotRow)
         self.dataTabs.addTab(parcelTab, "Csomag")
 
         self.contactFields: dict[str, dict[str, LineEdit]] = {}
@@ -230,11 +235,25 @@ class ParcelsInterface(AdminPage):
                 self.contactFields[side][field] = edit
             self.dataTabs.addTab(tab, label)
         self.dataTabs.setMaximumWidth(FORM_MAX_WIDTH)
+        # The tabs take the height of the visible tab, not of the tallest one (no gap above the button);
+        # by default a tab widget is Expanding and would swallow the spare height again
+        policy = self.dataTabs.sizePolicy()
+        policy.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        self.dataTabs.setSizePolicy(policy)
+        self.dataTabs.currentChanged.connect(self._fit_data_tabs)
+        self._fit_data_tabs(self.dataTabs.currentIndex())
         self.detailLayout.addWidget(self.dataTabs)
 
         self.saveDataButton = PrimaryPushButton("Adatok mentése", self.detailFrame)
         self.saveDataButton.clicked.connect(self.save_data)
         self.detailLayout.addLayout(button_row(self.saveDataButton))
+
+    def _fit_data_tabs(self, index: int) -> None:
+        for i in range(self.dataTabs.count()):
+            policy = QSizePolicy.Policy.Preferred if i == index else QSizePolicy.Policy.Ignored
+            self.dataTabs.widget(i).setSizePolicy(policy, policy)
+        self.dataTabs.widget(index).adjustSize()
+        self.dataTabs.updateGeometry()
 
     def _build_courier_section(self) -> None:
         self._add_section_title("Futárok")
@@ -331,6 +350,7 @@ class ParcelsInterface(AdminPage):
         self.detailTitle.setText(self.parcels[row]["tracking_number"])
         self.detailCopyButton.value = self.parcels[row]["tracking_number"]
         set_message(self.detailMessage, "Részletek betöltése...")
+        self.details.hide()
         self.detailFrame.setEnabled(False)
         self.detailFrame.show()
         run_in_background(
@@ -347,12 +367,8 @@ class ParcelsInterface(AdminPage):
         self.current = parcel
         status = parcel["status"]
         closed = status in CLOSED_STATUSES
-        milestones = [
-            ("Felvéve", parcel["picked_up_at"]),
-            ("Raktárba érkezett", parcel["warehouse_arrived_at"]),
-            ("Kiszállításra indult", parcel["out_for_delivery_at"]),
-            ("Kézbesítve", parcel["delivered_at"]),
-        ]
+        self.details.set_parcel(parcel)
+        self.details.show()
 
         self._fill_data_form(parcel)
         self._fill_courier_form(parcel)
@@ -375,20 +391,33 @@ class ParcelsInterface(AdminPage):
         self.detailFrame.setEnabled(True)
         set_message(self.detailMessage, error.message, error=True)
 
+    def _delivery_set(self) -> tuple[bool, bool]:
+        # (day given, slot given)
+        return self.deliveryDate.date() != self.deliveryDate.minimumDate(), self.deliverySlot.currentIndex() >= 0
+
+    def _clear_delivery(self) -> None:
+        # Only the form; saving sends the removal (allowed while no delivery courier is assigned)
+        self.deliveryDate.setDate(self.deliveryDate.minimumDate())
+        # Clearing the slot emits no signal
+        self.deliverySlot.setCurrentIndex(-1)
+        self._update_clear_button()
+
+    def _update_clear_button(self) -> None:
+        self.clearDeliveryButton.setEnabled(any(self._delivery_set()))
+
     def _fill_data_form(self, parcel: dict) -> None:
         self.sizeCombo.setCurrentText(parcel["size"])
         self.pickupDate.setDate(QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd"))
         self.pickupSlot.setCurrentText(_slot(parcel["pickup_window_start"], parcel["pickup_window_end"]))
-        has_delivery = parcel["delivery_date"] is not None
-        self.deliveryCheck.setChecked(has_delivery)
-        self.deliveryDate.setEnabled(has_delivery)
-        self.deliverySlot.setEnabled(has_delivery)
-        if has_delivery:
+        # The day before the pickup can never be a delivery day, so it stands for "no time yet"
+        pickup = QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd")
+        self.deliveryDate.setMinimumDate(pickup.addDays(-1))
+        if parcel["delivery_date"] is not None:
             self.deliveryDate.setDate(QDate.fromString(parcel["delivery_date"], "yyyy-MM-dd"))
             self.deliverySlot.setCurrentText(_slot(parcel["delivery_window_start"], parcel["delivery_window_end"]))
         else:
-            self.deliveryDate.setDate(QDate.fromString(parcel["pickup_date"], "yyyy-MM-dd"))
-            self.deliverySlot.setCurrentIndex(0)
+            self._clear_delivery()
+        self._update_clear_button()
         for side in SIDES:
             for field, edit in self.contactFields[side].items():
                 edit.setText(parcel[side][field] or "")
@@ -417,6 +446,7 @@ class ParcelsInterface(AdminPage):
                 ""
             )
         self.courierHint.setText(hint)
+        self.courierHint.setVisible(bool(hint))
         self.saveCouriersButton.setEnabled(status not in CLOSED_STATUSES)
 
     # --- Actions ---
@@ -433,7 +463,11 @@ class ParcelsInterface(AdminPage):
             body["pickup_date"] = pickup_date
         if self.pickupSlot.currentText() != _slot(parcel["pickup_window_start"], parcel["pickup_window_end"]):
             body["pickup_slot"] = self.pickupSlot.currentText()
-        if self.deliveryCheck.isChecked():
+        day_set, slot_set = self._delivery_set()
+        if day_set != slot_set:
+            set_message(self.detailMessage, "A kiszállítás napját és idősávját együtt kell megadni.", error=True)
+            return
+        if day_set:
             delivery = (self.deliveryDate.date().toString("yyyy-MM-dd"), self.deliverySlot.currentText())
         else:
             delivery = (None, None)
