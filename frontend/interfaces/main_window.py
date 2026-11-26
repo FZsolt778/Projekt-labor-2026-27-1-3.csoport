@@ -100,7 +100,6 @@ class Window(FluentWindow):
 
     #Vendég
     def initQuest(self):
-        print('init quest')
         
         #Trackin Interface
         trackingInterface = TrackingInterface('Tracking Interface', self)
@@ -120,7 +119,6 @@ class Window(FluentWindow):
  
     #Ügyfél
     def initCustomer(self):
-        print('init Customer')
         
          #Trackin Interface
         trackingInterface = TrackingInterface('Tracking Interface', self)
@@ -147,7 +145,6 @@ class Window(FluentWindow):
         
     #Futár
     def initCourier(self):
-        print('init courier')
 
         #Tasks Interface: assigned and picked up parcels
         tasksInterface = TasksInterface("Courier Tasks", self)
@@ -187,7 +184,12 @@ class Window(FluentWindow):
         parcelsInterface = ParcelsInterface("Admin Parcels", self)
         self.addSubInterface(parcelsInterface, QIcon(":/icons/package.svg"), "Csomagok", NavigationItemPosition.TOP)
         self.subInterfaces.append(parcelsInterface)
-        
+
+        #Logistics: the admin reaches every logistician function too (F-21)
+        logisticianInterface = LogisticianInterface("Logistician Interface", self)
+        self.addSubInterface(logisticianInterface, QIcon(":/icons/boxes-linked.svg"), "Logisztika", NavigationItemPosition.TOP)
+        self.subInterfaces.append(logisticianInterface)
+
         #Statistics Interface
         statisticsInterface = StatisticsInterface("Admin Statistics", self)
         self.addSubInterface(statisticsInterface, QIcon(":/icons/stat.svg"), "Statisztikák", NavigationItemPosition.TOP)

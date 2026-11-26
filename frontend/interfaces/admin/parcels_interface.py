@@ -30,6 +30,7 @@ from .admin_helpers import (
     FORM_MAX_WIDTH,
     MUTED_STYLE,
     AdminPage,
+    DateFilter,
     Pager,
     button_row,
     confirm,
@@ -114,6 +115,15 @@ class ParcelsInterface(AdminPage):
         filters.addWidget(self.courierFilter, 1)
         filters.addWidget(self.filterButton)
         self.contentLayout.insertLayout(2, filters)
+        # Pickup or delivery day (F-15)
+        self.pickupDayFilter = DateFilter("Felvétel napja", self.content)
+        self.deliveryDayFilter = DateFilter("Kiszállítás napja", self.content)
+        dayFilters = QHBoxLayout()
+        dayFilters.addWidget(self.pickupDayFilter)
+        dayFilters.addSpacing(24)
+        dayFilters.addWidget(self.deliveryDayFilter)
+        dayFilters.addStretch(1)
+        self.contentLayout.insertLayout(3, dayFilters)
 
         self.table = create_table(
             ["Csomagszám", "Állapot", "Méret", "Feladó", "Címzett", "Felvétel", "Kiszállítás",
@@ -198,9 +208,9 @@ class ParcelsInterface(AdminPage):
         form.addRow("Kiszállítás napja", self.deliveryDate)
         form.addRow("Kiszállítási idősáv", self.deliverySlot)
         self.deliveryHint = QLabel(
-            "A nap és az idősáv csak együtt menthető. Raktárban lévő csomaghoz kiszállító futár csak megadott "
-            "időponttal rendelhető. Ha kiveszed a pipát, mentéskor az időpont törlődik, de csak addig, amíg nincs "
-            "kiszállító futár a csomagon.",
+            ""
+            ""
+            "",
             parcelTab,
         )
         self.deliveryHint.setWordWrap(True)
@@ -267,6 +277,8 @@ class ParcelsInterface(AdminPage):
             "search": text_or_none(self.searchEdit),
             "status": self.statusFilter.currentData(),
             "courier_id": self.courierFilter.currentData(),
+            "pickup_date": self.pickupDayFilter.value(),
+            "delivery_date": self.deliveryDayFilter.value(),
         }
         self.refreshButton.setEnabled(False)
         self.show_message("Csomagok betöltése...")

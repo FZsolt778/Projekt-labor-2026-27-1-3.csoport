@@ -238,7 +238,3 @@ class LoginInterface(QFrame):
 
         self.hBoxLayout.addWidget(self.formFrame, 1)
         self.hBoxLayout.addWidget(self.illustrationFrame, 1)
-
-
-def test():
-    print("OK")

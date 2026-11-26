@@ -128,6 +128,7 @@ FIELD_LABELS = {
     "pickup_courier_id": "Felvevő futár",
     "delivery_courier_id": "Kiszállító futár",
     "parcel_ids": "Csomagok",
+    "tracking_numbers": "Csomagszámok",
     "note": "Megjegyzés",
     "name": "Név",
     "capacity": "Kapacitás",

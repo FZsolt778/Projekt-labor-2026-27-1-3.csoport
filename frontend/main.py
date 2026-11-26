@@ -24,4 +24,5 @@ if __name__ == '__main__':
     w = Window()
   
     w.showFullScreen()
+    w.showNormal()
     app.exec()

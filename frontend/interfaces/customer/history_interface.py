@@ -116,6 +116,11 @@ class ShipHistoryInterface(QFrame):
         table.setMaximumHeight(320)
         return table
 
+    # Fresh list every time the page is opened
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.refresh()
+
     def refresh(self) -> None:
         if not api.is_logged_in:
             self.messageLabel.setText("Az előzmények megtekintéséhez jelentkezz be.")
