@@ -118,14 +118,14 @@ class StatisticsInterface(AdminPage):
             "Kézbesítés / nap", "Átl. kiszállítási idő (perc)", "Átl. átfutás (óra)",
         ], stretch=0)
         self.contentLayout.addWidget(self.courierTable)
-        hint = QLabel(
-            "Kiszállítási idő: az indulástól a kézbesítésig. Átfutás: a felvételtől a kézbesítésig.",
-            self.content,
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(MUTED_STYLE)
-        self.contentLayout.addWidget(hint)
-        self.contentLayout.addStretch(1)
+        # hint = QLabel(
+        #     "Kiszállítási idő: az indulástól a kézbesítésig. Átfutás: a felvételtől a kézbesítésig.",
+        #     self.content,
+        # )
+        # hint.setWordWrap(True)
+        # hint.setStyleSheet(MUTED_STYLE)
+        # self.contentLayout.addWidget(hint)
+        # self.contentLayout.addStretch(1)
 
     # --- Layout ---
 
@@ -143,7 +143,6 @@ class StatisticsInterface(AdminPage):
         self.contentLayout.addWidget(title)
 
     def _tile_row(self, labels: list[str]) -> list[QLabel]:
-        # Stat tiles: muted label above a semibold value
         grid = QGridLayout()
         grid.setHorizontalSpacing(24)
         values = []
@@ -252,7 +251,6 @@ class StatisticsInterface(AdminPage):
         self.series.clear()
         for point in points:
             self.series.append(QPointF(self._msecs(point["day"]), point["utilization_percent"]))
-        # Markers only while they do not crowd the line
         self.series.setPointsVisible(len(points) <= 14)
         if points:
             first, last = self._msecs(points[0]["day"]), self._msecs(points[-1]["day"])
