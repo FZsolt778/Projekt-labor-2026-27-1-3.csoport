@@ -1,7 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Query, status
 from server.API.common import Page
-from server.API.deps import DbSession, OptionalUser, CustomerUser, AdminUser, StaffUser
+from server.API.deps import DbSession, BookingUser, CustomerUser, AdminUser, StaffUser
 from server.API.parcel import services
 from server.API.parcel.schemas import (
     AdminParcelUpdate, MyParcelsParams, ParcelAdminDetail, ParcelAdminRead, ParcelCourierUpdate,
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/parcels", tags=["parcels"])
 # --- Public ------------------------------------------------------
 
 @router.post("", response_model=ParcelRead, status_code=status.HTTP_201_CREATED)
-def create_parcel(data: ParcelCreate, db: DbSession, user: OptionalUser, background_tasks: BackgroundTasks):
+def create_parcel(data: ParcelCreate, db: DbSession, user: BookingUser, background_tasks: BackgroundTasks):
     return services.create_parcel(db, data, user, background_tasks)
 
 

@@ -25,6 +25,7 @@ from api_client import (
     format_window,
     run_in_background,
 )
+from components.copy_button import CopyButton, add_copy_buttons
 from .admin_helpers import (
     FORM_MAX_WIDTH,
     MUTED_STYLE,
@@ -132,7 +133,12 @@ class ParcelsInterface(AdminPage):
         self.detailLayout.setSpacing(10)
         self.detailTitle = SubtitleLabel(self.detailFrame)
         setFont(self.detailTitle, 22, QFont.Weight.DemiBold)
-        self.detailLayout.addWidget(self.detailTitle)
+        self.detailCopyButton = CopyButton(parent=self.detailFrame)
+        titleRow = QHBoxLayout()
+        titleRow.addWidget(self.detailTitle)
+        titleRow.addWidget(self.detailCopyButton)
+        titleRow.addStretch(1)
+        self.detailLayout.addLayout(titleRow)
         self.detailMessage = QLabel(self.detailFrame)
         self.detailMessage.setWordWrap(True)
         self.detailLayout.addWidget(self.detailMessage)
@@ -295,6 +301,7 @@ class ParcelsInterface(AdminPage):
             ]
             for parcel in self.parcels
         ])
+        add_copy_buttons(self.table, 0)
         self.show_message(self._notice or f"{page['total']} csomag felel meg a szűrésnek.")
         self._notice = None
         select_by_id(self.table, self.parcels, selected_id)
@@ -310,6 +317,7 @@ class ParcelsInterface(AdminPage):
         parcel_id = self.parcels[row]["id"]
         self.selected_id, self.current = parcel_id, None
         self.detailTitle.setText(self.parcels[row]["tracking_number"])
+        self.detailCopyButton.value = self.parcels[row]["tracking_number"]
         set_message(self.detailMessage, "Részletek betöltése...")
         self.detailFrame.setEnabled(False)
         self.detailFrame.show()

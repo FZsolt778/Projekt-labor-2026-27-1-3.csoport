@@ -5,7 +5,7 @@ from PySide6.QtGui import QIcon
 from api_client import api, ROLE, ROLE_LABELS, run_in_background
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import (
-    Flyout, FlyoutAnimationType, InfoBar, InfoBarPosition, NavigationAvatarWidget, NavigationItemPosition,
+    InfoBar, InfoBarPosition, NavigationAvatarWidget, NavigationItemPosition,
     FluentWindow,
 )
 from .admin.parcels_interface import ParcelsInterface
@@ -20,6 +20,8 @@ from .customer.tracking_interface import TrackingInterface
 
 from .courier.management_interface import ManagementInterface
 from .courier.history_interface import DeliveryHistoryInterface
+from .courier.tasks_interface import TasksInterface
+from .common.profile_dialog import ProfileDialog
 from .logistician.assignments_interface import LogisticianInterface
 
 APP_TITLE = "Csomagkezelő"
@@ -39,6 +41,7 @@ class Window(FluentWindow):
         self.sessionTimer.setInterval(5000)
         self.sessionTimer.timeout.connect(self._check_session)
         self.expiredNotice = None
+        self.profileDialog = None
         api.events.session_expired.connect(self._on_session_expired)
 
         #self.shipmentsInterface = ShipmentsInterface("Shipments Interface", self)
@@ -70,7 +73,7 @@ class Window(FluentWindow):
                 widget=NavigationAvatarWidget(self._account_text()),
                 onClick=self._show_account,
                 position=NavigationItemPosition.BOTTOM,
-                tooltip="Bejelentkezett felhasználó",
+                tooltip="Saját fiók: személyes adatok, jelszó",
             )
             logout_item = self.navigationInterface.addItem(
                 routeKey="logout",
@@ -145,7 +148,12 @@ class Window(FluentWindow):
     #Futár
     def initCourier(self):
         print('init courier')
-        
+
+        #Tasks Interface: assigned and picked up parcels
+        tasksInterface = TasksInterface("Courier Tasks", self)
+        self.addSubInterface(tasksInterface, QIcon(":/icons/package-open.svg"), "Feladataim", NavigationItemPosition.TOP)
+        self.subInterfaces.append(tasksInterface)
+
         #Managment Interface
         managementInterface = ManagementInterface("Managment Interface", self)
         self.addSubInterface(managementInterface, QIcon(":/icons/boxes-linked.svg"), "Csomagkezelés", NavigationItemPosition.TOP)
@@ -155,6 +163,11 @@ class Window(FluentWindow):
         deliveryHistoryInterface = DeliveryHistoryInterface("Delivery History Interface", self)
         self.addSubInterface(deliveryHistoryInterface, QIcon(":/icons/rotate-ccw-clock.svg"), "Előzmények", NavigationItemPosition.TOP)
         self.subInterfaces.append(deliveryHistoryInterface)
+
+        #Trackin Interface: any parcel by its tracking number, like a guest
+        trackingInterface = TrackingInterface('Tracking Interface', self)
+        self.addSubInterface(trackingInterface, QIcon(":/icons/package-search.svg"), 'Nyomkövetés')
+        self.subInterfaces.append(trackingInterface)
         
     def initLogistician(self):
         logisticianInterface = LogisticianInterface("Logistician Interface", self)
@@ -252,20 +265,32 @@ class Window(FluentWindow):
         self._notify(InfoBar.success, "Sikeres bejelentkezés", f"{greeting}Szerepkör: {self._role_title()}", 4000)
 
     def _show_account(self):
-        lines = []
-        if self.account is not None:
-            lines.append(self.account["email"])
-        lines.append(f"Szerepkör: {self._role_title()}")
-        if api.expires_at is not None:
-            lines.append(f"A munkamenet lejár: {api.expires_at.astimezone():%H:%M}")
-        Flyout.create(
-            title=self._account_text() if self.account else "Bejelentkezve",
-            content="\n".join(lines),
-            target=self._account_item(),
-            parent=self,
-            isClosable=True,
-            aniType=FlyoutAnimationType.PULL_UP,
-        )
+        dialog = ProfileDialog(self.account, self)
+        dialog.profileSaved.connect(self._on_profile_saved)
+        dialog.passwordChanged.connect(self._on_password_changed)
+        # Kept so that an expiring session can close it (_on_session_expired)
+        self.profileDialog = dialog
+        try:
+            dialog.exec()
+        finally:
+            self.profileDialog = None
+            dialog.deleteLater()
+
+    def _on_profile_saved(self, user: dict):
+        old_email = self.account["email"] if self.account else None
+        self.account = user
+        account_item = self._account_item()
+        if account_item is not None:
+            account_item.setName(self._account_text())
+        self.setWindowTitle(f"{APP_TITLE} – {self._account_text()}")
+        text = "Az adataidat elmentettük."
+        if old_email is not None and user["email"].lower() != old_email.lower():
+            text += f" Legközelebb az új email címmel jelentkezz be: {user['email']}"
+        self._notify(InfoBar.success, "Sikeres mentés", text, 5000)
+
+    def _on_password_changed(self):
+        self._notify(InfoBar.success, "Jelszó módosítva",
+                     "Legközelebb már az új jelszóval jelentkezz be.", 5000)
 
     def _check_session(self):
         seconds_left = api.session_seconds_left
@@ -275,6 +300,8 @@ class Window(FluentWindow):
     def _on_session_expired(self):
         if self.sessionRole is None:
             return
+        if self.profileDialog is not None:
+            self.profileDialog.reject()
         api.logout()
         self.initNavigation()
         if self.authInterface is not None:

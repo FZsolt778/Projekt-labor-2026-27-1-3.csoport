@@ -29,6 +29,7 @@ from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QStackedLayout
 from api_client import ApiError, STATUS_LABELS, api, run_in_background
 from qtlottie import init_qml
+from .courier_actions import ask_fail_note
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class ManagementInterface(QFrame):
 
         #-------Body Label-------
         self.description = BodyLabel(
-                    "Csomag állatot jelölés",
+                    "Csomag állapotának rögzítése",
                     self.contentWidget
                 )
         
@@ -106,9 +107,9 @@ class ManagementInterface(QFrame):
 
         # Add options
         self.statusBox.addItem('Felvett', userData=ManagerEndPoints.PICKUP.value);
-        self.statusBox.addItem('Kiszálított', userData=ManagerEndPoints.DELIVER.value);
+        self.statusBox.addItem('Kiszállított', userData=ManagerEndPoints.DELIVER.value);
         self.statusBox.addItem('Kezdés', userData=ManagerEndPoints.START.value);
-        self.statusBox.addItem('Töröl', userData=ManagerEndPoints.FAIL.value);
+        self.statusBox.addItem('Sikertelen kísérlet', userData=ManagerEndPoints.FAIL.value);
         
         setFont(self.statusBox, 24, QFont.Bold)
         self.statusBox.setFixedHeight(100)
@@ -350,12 +351,26 @@ class ManagementInterface(QFrame):
         }.get(action)
 
     def onClickStatus(self) -> None:
-        self.searchButton.setEnabled(False)
         parcel_id : str = self.parcelEdit.text().strip()
         end_point : str = self.statusBox.currentData();
+        if end_point is None:
+            self._show_info_bar(InfoBar.warning, "Hiányzó adat", "Válaszd ki, mit szeretnél rögzíteni.")
+            return
+        if not parcel_id:
+            self._show_info_bar(InfoBar.warning, "Hiányzó adat", "Add meg a csomagszámot.")
+            return
+        # The server requires a reason for a failed attempt
+        body = None
+        if end_point == ManagerEndPoints.FAIL.value:
+            note = ask_fail_note(self, parcel_id)
+            if note is None:
+                return
+            body = {"note": note}
+        self.searchButton.setEnabled(False)
         run_in_background(
             api.post,
             f"/courier/parcels/{parcel_id}/{end_point}",
+            body,
             on_success=lambda result: self._on_tracking_success(
                 result,
                 end_point,
@@ -380,7 +395,7 @@ class ManagementInterface(QFrame):
             ManagerEndPoints.PICKUP.value: "Felvette a {} csomagot.",
             ManagerEndPoints.START.value: "Elindult a {} csomaggal.",
             ManagerEndPoints.DELIVER.value: "Kézbesítette a {} csomagot.",
-            ManagerEndPoints.FAIL.value: "Törölte a {} csomagot.",
+            ManagerEndPoints.FAIL.value: "Sikertelen kísérlet rögzítve: {}.",
         }
         message_template = action_messages.get(
             action,
@@ -433,7 +448,7 @@ class ManagementInterface(QFrame):
     def _on_track_box_changed(self) -> None:
         if self.statusBox.currentIndex() == 0: #Felvett
             self.searchButton.setIcon(QIcon(":/icons/package-plus.svg"))
-        elif self.statusBox.currentIndex() == 1: #Kiszálított
+        elif self.statusBox.currentIndex() == 1: #Kiszállított
             self.searchButton.setIcon(QIcon(":/icons/package-check.svg"))
         elif self.statusBox.currentIndex() == 2: #Kezdés
             self.searchButton.setIcon(QIcon(":/icons/package-start.svg"))
