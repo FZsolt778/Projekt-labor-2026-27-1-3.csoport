@@ -15,6 +15,9 @@ BORDER = "#E5E5E5"
 ACCENT = "#2383E2"
 ACCENT_HOVER = "#1B6FC2"
 ACCENT_LIGHT = "#EAF3FC"
+SCROLL_HANDLE = "#C4C9CE"
+SCROLL_HANDLE_HOVER = "#9AA1A8"
+SCROLL_HANDLE_PRESSED = "#7D858D"
 
 # Betűtípus
 FONT_FAMILY = "Inter"
@@ -67,6 +70,64 @@ def setup_theme(app: QApplication):
 
         QPushButton:disabled {{
             color: {TEXT_SECONDARY};
+        }}
+
+        /* Thin rounded scroll bars without arrows, the track stays transparent */
+        QScrollBar:vertical {{
+            background: transparent;
+            width: 12px;
+            margin: 0;
+        }}
+
+        QScrollBar:horizontal {{
+            background: transparent;
+            height: 12px;
+            margin: 0;
+        }}
+
+        QScrollBar::handle:vertical {{
+            background: {SCROLL_HANDLE};
+            border-radius: 3px;
+            min-height: 40px;
+            margin: 2px 3px;
+        }}
+
+        QScrollBar::handle:horizontal {{
+            background: {SCROLL_HANDLE};
+            border-radius: 3px;
+            min-width: 40px;
+            margin: 3px 2px;
+        }}
+
+        QScrollBar::handle:vertical:hover {{
+            background: {SCROLL_HANDLE_HOVER};
+            border-radius: 4px;
+            margin: 2px 2px;
+        }}
+
+        QScrollBar::handle:horizontal:hover {{
+            background: {SCROLL_HANDLE_HOVER};
+            border-radius: 4px;
+            margin: 2px 2px;
+        }}
+
+        QScrollBar::handle:pressed {{
+            background: {SCROLL_HANDLE_PRESSED};
+        }}
+
+        QScrollBar::add-line, QScrollBar::sub-line {{
+            width: 0;
+            height: 0;
+            border: none;
+            background: none;
+        }}
+
+        QScrollBar::add-page, QScrollBar::sub-page {{
+            background: none;
+        }}
+
+        QAbstractScrollArea::corner {{
+            background: transparent;
         }}
     """)
 
